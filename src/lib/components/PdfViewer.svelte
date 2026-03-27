@@ -8,17 +8,21 @@
 		annotations: Annotation[];
 		onCreateAnnotation: (selectedText: string, page: number) => void;
 		onClickAnnotation?: (annotation: Annotation) => void;
+		onToggleFullscreen?: () => void;
+		isFullscreen?: boolean;
 	}
 
-	let { arxivId, annotations, onCreateAnnotation, onClickAnnotation }: Props = $props();
+	let { arxivId, annotations, onCreateAnnotation, onClickAnnotation, onToggleFullscreen, isFullscreen = false }: Props = $props();
 
 	let container: HTMLDivElement;
+	let pagesContainer: HTMLDivElement;
 	let pdfDoc: any = null;
 	let currentScale = $state(1.2);
 	let numPages = $state(0);
 	let loading = $state(true);
 	let error = $state('');
 	let renderedPages = $state<Set<number>>(new Set());
+	let basePageWidth = 0; // unscaled page width from the PDF
 
 	// Selection popover state
 	let popover = $state<{ x: number; y: number; text: string; page: number } | null>(null);
@@ -27,6 +31,13 @@
 	let pageElements: Map<number, HTMLDivElement> = new Map();
 
 	let pdfjsLib: typeof import('pdfjs-dist');
+
+	function computeFitWidthScale() {
+		if (!pagesContainer || !basePageWidth) return 1.2;
+		// Available width minus padding (sp-4 = 16px on each side)
+		const availableWidth = pagesContainer.clientWidth - 32;
+		return Math.max(0.5, Math.min(3, availableWidth / basePageWidth));
+	}
 
 	onMount(async () => {
 		try {
@@ -43,11 +54,32 @@
 			numPages = pdfDoc.numPages;
 			loading = false;
 
+			// Get the unscaled page width from page 1 to compute fit-width
+			const firstPage = await pdfDoc.getPage(1);
+			const defaultViewport = firstPage.getViewport({ scale: 1 });
+			basePageWidth = defaultViewport.width;
+
+			// Compute initial scale to fit container width
+			currentScale = computeFitWidthScale();
+
 			await renderAllPages();
 		} catch (e: any) {
 			error = e.message || 'Failed to load PDF';
 			loading = false;
 		}
+
+		// Re-fit on resize (e.g. orientation change, fullscreen toggle)
+		const ro = new ResizeObserver(() => {
+			if (!pdfDoc || loading) return;
+			const newScale = computeFitWidthScale();
+			if (Math.abs(newScale - currentScale) > 0.02) {
+				currentScale = newScale;
+				rerender();
+			}
+		});
+		if (pagesContainer) ro.observe(pagesContainer);
+
+		return () => ro.disconnect();
 	});
 
 	async function renderAllPages() {
@@ -269,13 +301,28 @@
 			<button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
 		</div>
 		<div class="pdf-toolbar-right">
-			<span class="mono hint">Select text to annotate</span>
+			<span class="mono hint desktop-only">Select text to annotate</span>
+			{#if onToggleFullscreen}
+				<button class="fullscreen-btn" onclick={onToggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+					{#if isFullscreen}
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+							<line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+						</svg>
+					{:else}
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+							<line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+						</svg>
+					{/if}
+				</button>
+			{/if}
 		</div>
 	</div>
 
 	<!-- PDF pages -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="pdf-pages" onmouseup={handleMouseUp}>
+	<div class="pdf-pages" bind:this={pagesContainer} onmouseup={handleMouseUp}>
 		{#if loading}
 			<div class="pdf-loading">
 				<span class="mono">Loading PDF...</span>
@@ -380,7 +427,7 @@
 	.pdf-pages {
 		flex: 1;
 		overflow-y: auto;
-		overflow-x: auto;
+		overflow-x: hidden;
 		background: #525252;
 		padding: var(--sp-4);
 		display: flex;
@@ -492,5 +539,53 @@
 	.popover-dismiss:hover {
 		background: var(--bg-hover);
 		color: var(--text-primary);
+	}
+
+	/* Fullscreen button */
+	.fullscreen-btn {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-sm);
+		color: var(--text-tertiary);
+		transition: all var(--duration-fast);
+		flex-shrink: 0;
+	}
+
+	.fullscreen-btn:hover {
+		background: var(--bg-hover);
+		color: var(--accent);
+	}
+
+	/* ── Tablet & Mobile ── */
+	@media (max-width: 1024px) {
+		.desktop-only {
+			display: none;
+		}
+
+		.pdf-toolbar-right {
+			display: flex;
+			align-items: center;
+			justify-content: flex-end;
+			gap: var(--sp-2);
+		}
+
+		.pdf-pages {
+			padding: var(--sp-2);
+			gap: var(--sp-2);
+		}
+
+		.zoom-btn {
+			width: 36px;
+			height: 36px;
+			font-size: 1.1rem;
+		}
+
+		.fullscreen-btn {
+			width: 40px;
+			height: 40px;
+		}
 	}
 </style>

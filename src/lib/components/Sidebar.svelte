@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { ui, papers } from '$lib/stores.svelte';
 
 	const unreadCount = $derived(papers.items.filter(p => p.readingStatus === 'unread' || p.readingStatus === 'reading').length);
@@ -15,9 +16,18 @@
 		if (href === '/') return page.url.pathname === '/';
 		return page.url.pathname.startsWith(href);
 	}
+
+	function handleNavClick(e: MouseEvent, href: string) {
+		// On mobile, close sidebar after navigating
+		if (ui.mobileSidebarOpen) {
+			e.preventDefault();
+			ui.mobileSidebarOpen = false;
+			goto(href);
+		}
+	}
 </script>
 
-<nav class="sidebar" class:collapsed={ui.sidebarCollapsed}>
+<nav class="sidebar" class:collapsed={ui.sidebarCollapsed} class:mobile-open={ui.mobileSidebarOpen}>
 	<div class="sidebar-header">
 		<button class="logo-btn" onclick={() => ui.sidebarCollapsed = !ui.sidebarCollapsed}>
 			<span class="logo-mark">Re:</span>
@@ -33,6 +43,7 @@
 				href={item.href}
 				class="nav-item"
 				class:active={isActive(item.href)}
+				onclick={(e) => handleNavClick(e, item.href)}
 			>
 				<span class="nav-icon">
 					{#if item.icon === 'inbox'}
@@ -207,5 +218,51 @@
 	.collapsed .nav-section,
 	.collapsed .sidebar-footer {
 		padding: var(--sp-2);
+	}
+
+	/* ── Tablet & Mobile (≤1024px) ── */
+	@media (max-width: 1024px) {
+		.sidebar {
+			position: fixed;
+			top: 0;
+			left: 0;
+			bottom: 0;
+			width: 260px;
+			z-index: 100;
+			transform: translateX(-100%);
+			transition: transform var(--duration-normal) var(--ease-out);
+			box-shadow: var(--shadow-lg);
+		}
+
+		.sidebar.mobile-open {
+			transform: translateX(0);
+		}
+
+		/* Always show labels on mobile sidebar (never collapsed) */
+		.sidebar.collapsed {
+			width: 260px;
+		}
+
+		.sidebar.collapsed .nav-item {
+			justify-content: flex-start;
+			padding: var(--sp-2) var(--sp-3);
+		}
+
+		.sidebar.collapsed .nav-section,
+		.sidebar.collapsed .sidebar-footer {
+			padding: var(--sp-2) var(--sp-3);
+		}
+
+		/* Show labels and badges even if desktop mode was collapsed */
+		.sidebar.collapsed .nav-label,
+		.sidebar.collapsed .nav-badge,
+		.sidebar.collapsed .logo-text,
+		.sidebar.collapsed .kbd {
+			display: inline;
+		}
+
+		.nav-item {
+			min-height: 44px;
+		}
 	}
 </style>

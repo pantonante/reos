@@ -104,4 +104,24 @@
 		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 		gap: var(--sp-4);
 	}
+
+	@media (max-width: 1024px) {
+		.page-header {
+			margin-bottom: var(--sp-6);
+		}
+
+		.page-header h1 {
+			font-size: 1.8rem;
+		}
+
+		.section {
+			margin-bottom: var(--sp-6);
+		}
+	}
+
+	@media (max-width: 480px) {
+		.card-grid {
+			grid-template-columns: 1fr;
+		}
+	}
 </style>

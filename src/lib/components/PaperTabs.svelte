@@ -201,4 +201,26 @@
 		background: var(--bg-hover);
 		color: var(--text-primary);
 	}
+
+	@media (max-width: 1024px) {
+		.tab {
+			padding: var(--sp-3) var(--sp-4);
+			padding-right: var(--sp-3);
+			font-size: 0.82rem;
+			max-width: 180px;
+			min-height: 44px;
+		}
+
+		/* Always show close button on touch */
+		.tab-close {
+			opacity: 1;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.tab {
+			max-width: 140px;
+			padding: var(--sp-2) var(--sp-3);
+		}
+	}
 </style>

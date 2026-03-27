@@ -68,6 +68,8 @@ export const ui = (() => {
 	let commandPaletteOpen = $state(false);
 	let addPaperOpen = $state(false);
 	let sidebarCollapsed = $state(false);
+	let mobileSidebarOpen = $state(false);
+	let pdfFullscreen = $state(false);
 	let activePaperId = $state<string | null>(null);
 	let activeThreadId = $state<string | null>(null);
 	let openPaperIds = $state<string[]>(
@@ -89,6 +91,10 @@ export const ui = (() => {
 		set addPaperOpen(v) { addPaperOpen = v; },
 		get sidebarCollapsed() { return sidebarCollapsed; },
 		set sidebarCollapsed(v) { sidebarCollapsed = v; },
+		get mobileSidebarOpen() { return mobileSidebarOpen; },
+		set mobileSidebarOpen(v) { mobileSidebarOpen = v; },
+		get pdfFullscreen() { return pdfFullscreen; },
+		set pdfFullscreen(v) { pdfFullscreen = v; },
 		get activePaperId() { return activePaperId; },
 		set activePaperId(v) { activePaperId = v; },
 		get activeThreadId() { return activeThreadId; },

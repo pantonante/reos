@@ -327,4 +327,48 @@
 		text-align: center;
 		padding: var(--sp-16) 0;
 	}
+
+	@media (max-width: 1024px) {
+		.header-left h1 {
+			font-size: 1.8rem;
+		}
+
+		.filters {
+			gap: var(--sp-2);
+		}
+
+		.search-input {
+			min-width: 160px;
+		}
+
+		select {
+			min-width: 120px;
+		}
+	}
+
+	@media (max-width: 768px) {
+		/* Force card view on smaller screens — table is hard to use */
+		.table-wrap {
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.card-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.filters {
+			flex-direction: column;
+		}
+
+		.search-input {
+			min-width: 100%;
+		}
+
+		select {
+			min-width: 100%;
+		}
+	}
 </style>

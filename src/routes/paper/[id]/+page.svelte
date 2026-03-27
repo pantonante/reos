@@ -7,6 +7,14 @@
 
 	const paper = $derived(papers.get(page.params.id));
 
+	// Mobile context panel state
+	let mobileContextOpen = $state(false);
+
+	function toggleFullscreen() {
+		ui.pdfFullscreen = !ui.pdfFullscreen;
+		if (ui.pdfFullscreen) mobileContextOpen = false;
+	}
+
 	// Register this paper as open in the tab bar
 	$effect(() => {
 		const id = page.params.id;
@@ -198,8 +206,8 @@
 		<a href="/library">← Back to library</a>
 	</div>
 {:else}
-	<div class="paper-detail">
-		<div class="reader-layout">
+	<div class="paper-detail" class:fullscreen={ui.pdfFullscreen}>
+		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen}>
 			<!-- PDF panel (left) -->
 			<div class="pdf-panel">
 				<div class="pdf-header-bar">
@@ -207,7 +215,7 @@
 					<div class="pdf-header-actions">
 						<a href="https://arxiv.org/pdf/{paper.arxivId}" target="_blank" rel="noopener" class="pdf-action mono">
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-							Open PDF
+							<span class="action-label">Open PDF</span>
 						</a>
 						<a href={paper.arxivUrl} target="_blank" rel="noopener" class="pdf-action mono">arxiv ↗</a>
 					</div>
@@ -221,14 +229,32 @@
 								annotations={annotations.items.filter(a => a.paperId === openId)}
 								onCreateAnnotation={openAnnotationModal}
 								onClickAnnotation={scrollToAnnotation}
+								onToggleFullscreen={toggleFullscreen}
+								isFullscreen={ui.pdfFullscreen}
 							/>
 						</div>
 					{/if}
 				{/each}
 			</div>
 
+			<!-- Mobile context toggle (floating button) -->
+			<button
+				class="mobile-context-toggle"
+				class:active={mobileContextOpen}
+				onclick={() => mobileContextOpen = !mobileContextOpen}
+				aria-label="Toggle paper details"
+			>
+				{#if mobileContextOpen}
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				{:else}
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+					</svg>
+				{/if}
+			</button>
+
 			<!-- Context panel (right) -->
-			<div class="context-panel">
+			<div class="context-panel" class:mobile-open={mobileContextOpen}>
 				<div class="panel-tabs">
 					{#each ['summary', 'info', 'annotations', 'notes', 'threads'] as tab}
 						<button
@@ -530,6 +556,16 @@
 		display: grid;
 		grid-template-columns: 1fr 380px;
 		height: 100%;
+		transition: grid-template-columns var(--duration-normal) var(--ease-out);
+	}
+
+	.reader-layout.fullscreen {
+		grid-template-columns: 1fr;
+	}
+
+	/* Mobile context toggle — hidden on desktop */
+	.mobile-context-toggle {
+		display: none;
 	}
 
 	/* PDF panel */
@@ -545,10 +581,11 @@
 		display: none;
 		flex: 1;
 		min-height: 0;
+		width: 100%;
 	}
 
 	.pdf-slot.active {
-		display: flex;
+		display: block;
 	}
 
 	.pdf-header-bar {
@@ -1257,5 +1294,117 @@
 		margin: 0 0 var(--sp-3);
 		padding: var(--sp-2) var(--sp-4);
 		color: var(--text-tertiary);
+	}
+
+	/* ── Tablet (≤1024px) ── */
+	@media (max-width: 1024px) {
+		.reader-layout {
+			grid-template-columns: 1fr;
+			position: relative;
+		}
+
+		.pdf-panel {
+			min-height: 0;
+		}
+
+		/* Context panel as right-side slide-in overlay on tablet */
+		.context-panel {
+			position: absolute;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			width: 360px;
+			max-width: 85vw;
+			border-left: 1px solid var(--border);
+			box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+			transform: translateX(100%);
+			transition: transform var(--duration-normal) var(--ease-out);
+			z-index: 20;
+		}
+
+		.context-panel.mobile-open {
+			transform: translateX(0);
+		}
+
+		/* Floating toggle button */
+		.mobile-context-toggle {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: absolute;
+			bottom: var(--sp-4);
+			right: var(--sp-4);
+			width: 48px;
+			height: 48px;
+			border-radius: 50%;
+			background: var(--accent);
+			color: var(--accent-text);
+			box-shadow: var(--shadow-lg);
+			z-index: 19;
+			transition: all var(--duration-fast);
+		}
+
+		.mobile-context-toggle.active {
+			background: var(--bg-surface);
+			color: var(--text-primary);
+			right: calc(360px + var(--sp-4));
+		}
+
+		.mobile-context-toggle:hover {
+			transform: scale(1.05);
+		}
+
+		/* Panel tabs: scrollable on tablet */
+		.panel-tabs {
+			overflow-x: auto;
+			scrollbar-width: none;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.panel-tabs::-webkit-scrollbar {
+			display: none;
+		}
+
+		.panel-tab {
+			white-space: nowrap;
+			flex-shrink: 0;
+			min-height: 44px;
+		}
+
+		.pdf-header-bar .action-label {
+			display: none;
+		}
+	}
+
+	/* ── Fullscreen override ── */
+	.reader-layout.fullscreen .context-panel,
+	.reader-layout.fullscreen .mobile-context-toggle {
+		display: none;
+	}
+
+	.reader-layout.fullscreen .pdf-header-bar {
+		display: none;
+	}
+
+	/* ── Phone (≤480px) ── */
+	@media (max-width: 480px) {
+		.context-panel {
+			width: 100vw;
+			max-width: 100vw;
+		}
+
+		.mobile-context-toggle.active {
+			right: var(--sp-4);
+			bottom: var(--sp-4);
+			z-index: 21;
+		}
+
+		.panel-content {
+			padding: var(--sp-3);
+		}
+
+		.pdf-header-actions {
+			gap: var(--sp-2);
+		}
 	}
 </style>

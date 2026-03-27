@@ -405,4 +405,41 @@
 		width: 72px;
 		text-align: right;
 	}
+
+	/* ── Tablet (≤1024px) ── */
+	@media (max-width: 1024px) {
+		.header-left h1 {
+			font-size: 1.8rem;
+		}
+
+		.kanban {
+			gap: var(--sp-3);
+		}
+
+		.thread-card {
+			padding: var(--sp-3);
+		}
+
+		.new-thread-btn {
+			min-height: 44px;
+		}
+	}
+
+	/* ── Phone / small tablet (≤768px) ── */
+	@media (max-width: 768px) {
+		.kanban {
+			grid-template-columns: 1fr;
+			gap: var(--sp-4);
+		}
+
+		.page-header {
+			flex-direction: column;
+			gap: var(--sp-3);
+		}
+
+		.header-actions {
+			width: 100%;
+			justify-content: space-between;
+		}
+	}
 </style>

@@ -1273,4 +1273,23 @@
 	.btn-small:hover:not(:disabled) { background: var(--accent-hover); }
 
 	.btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	/* ── Tablet (≤1024px) ── */
+	@media (max-width: 1024px) {
+		.thread-layout {
+			grid-template-columns: 1fr;
+			height: auto;
+		}
+
+		.thread-main {
+			padding: var(--sp-6);
+		}
+
+		.thread-sidebar {
+			border-left: none;
+			border-top: 1px solid var(--border);
+			height: auto;
+			padding: var(--sp-5);
+		}
+	}
 </style>
