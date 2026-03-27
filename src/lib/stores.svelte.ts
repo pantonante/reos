@@ -67,7 +67,11 @@ export const notes = createStore<Note>([], '/api/notes');
 export const ui = (() => {
 	let commandPaletteOpen = $state(false);
 	let addPaperOpen = $state(false);
-	let sidebarCollapsed = $state(false);
+	let sidebarCollapsed = $state(
+		typeof localStorage !== 'undefined'
+			? localStorage.getItem('reos:sidebarCollapsed') === 'true'
+			: false
+	);
 	let mobileSidebarOpen = $state(false);
 	let pdfFullscreen = $state(false);
 	let activePaperId = $state<string | null>(null);
@@ -90,7 +94,12 @@ export const ui = (() => {
 		get addPaperOpen() { return addPaperOpen; },
 		set addPaperOpen(v) { addPaperOpen = v; },
 		get sidebarCollapsed() { return sidebarCollapsed; },
-		set sidebarCollapsed(v) { sidebarCollapsed = v; },
+		set sidebarCollapsed(v) {
+			sidebarCollapsed = v;
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('reos:sidebarCollapsed', String(v));
+			}
+		},
 		get mobileSidebarOpen() { return mobileSidebarOpen; },
 		set mobileSidebarOpen(v) { mobileSidebarOpen = v; },
 		get pdfFullscreen() { return pdfFullscreen; },

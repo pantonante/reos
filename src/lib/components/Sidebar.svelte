@@ -29,12 +29,14 @@
 
 <nav class="sidebar" class:collapsed={ui.sidebarCollapsed} class:mobile-open={ui.mobileSidebarOpen}>
 	<div class="sidebar-header">
-		<button class="logo-btn" onclick={() => ui.sidebarCollapsed = !ui.sidebarCollapsed}>
-			<span class="logo-mark">Re:</span>
-			{#if !ui.sidebarCollapsed}
-				<span class="logo-text">OS</span>
-			{/if}
+		<button class="collapse-toggle" onclick={() => ui.sidebarCollapsed = !ui.sidebarCollapsed} title={ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+				<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+			</svg>
 		</button>
+		{#if !ui.sidebarCollapsed}
+			<span class="logo"><span class="logo-mark">Re:</span><span class="logo-text">OS</span></span>
+		{/if}
 	</div>
 
 	<div class="nav-section">
@@ -44,6 +46,7 @@
 				class="nav-item"
 				class:active={isActive(item.href)}
 				onclick={(e) => handleNavClick(e, item.href)}
+				title={ui.sidebarCollapsed ? item.label : undefined}
 			>
 				<span class="nav-icon">
 					{#if item.icon === 'inbox'}
@@ -82,16 +85,14 @@
 	</div>
 
 	<div class="sidebar-footer">
-		<button class="nav-item" onclick={() => ui.commandPaletteOpen = true}>
-			<span class="nav-icon">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="11" cy="11" r="8"/>
-					<line x1="21" y1="21" x2="16.65" y2="16.65"/>
-				</svg>
-			</span>
+		<button class="search-trigger" onclick={() => ui.commandPaletteOpen = true} title={ui.sidebarCollapsed ? 'Search (⌘K)' : undefined}>
+			<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="11" cy="11" r="7"/>
+				<line x1="16.5" y1="16.5" x2="21" y2="21"/>
+			</svg>
 			{#if !ui.sidebarCollapsed}
-				<span class="nav-label">Search</span>
-				<kbd class="kbd">⌘K</kbd>
+				<span class="search-label">Search…</span>
+				<kbd class="search-kbd">⌘K</kbd>
 			{/if}
 		</button>
 	</div>
@@ -111,24 +112,34 @@
 	}
 
 	.sidebar-header {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-3);
 		padding: var(--sp-4) var(--sp-4) var(--sp-2);
 	}
 
-	.logo-btn {
+	.collapse-toggle {
 		display: flex;
-		align-items: baseline;
-		gap: 0;
-		padding: var(--sp-2) var(--sp-3);
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 32px;
+		height: 32px;
 		border-radius: var(--radius-sm);
-		transition: background var(--duration-fast);
+		color: var(--text-secondary);
+		transition: background var(--duration-fast), color var(--duration-fast);
+	}
+
+	.collapse-toggle:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.logo {
 		font-family: var(--font-display);
 		font-size: 1.3rem;
 		font-weight: 600;
 		letter-spacing: -0.03em;
-	}
-
-	.logo-btn:hover {
-		background: var(--bg-hover);
 	}
 
 	.logo-mark {
@@ -191,23 +202,55 @@
 		font-family: var(--font-mono);
 	}
 
-	.kbd {
-		margin-left: auto;
-		font-family: var(--font-mono);
-		font-size: 0.7rem;
-		color: var(--text-tertiary);
+	.sidebar-footer {
+		padding: var(--sp-3);
+	}
+
+	.search-trigger {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		width: 100%;
+		padding: 7px var(--sp-3);
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
 		background: var(--bg-base);
+		color: var(--text-tertiary);
+		font-size: 0.82rem;
+		font-family: var(--font-body);
+		cursor: pointer;
+		transition: border-color var(--duration-fast), background var(--duration-fast);
+	}
+
+	.search-trigger:hover {
+		border-color: var(--text-tertiary);
+		background: var(--bg-overlay);
+	}
+
+	.search-icon {
+		flex-shrink: 0;
+		opacity: 0.6;
+	}
+
+	.search-label {
+		flex: 1;
+		text-align: left;
+	}
+
+	.search-kbd {
+		font-family: var(--font-mono);
+		font-size: 0.65rem;
+		color: var(--text-tertiary);
+		background: var(--bg-raised);
 		padding: 1px 5px;
 		border-radius: 3px;
 		border: 1px solid var(--border);
+		line-height: 1.4;
 	}
 
-	.sidebar-footer {
-		padding: var(--sp-3);
-		border-top: 1px solid var(--border);
-		display: flex;
-		flex-direction: column;
-		gap: var(--sp-1);
+	.collapsed .sidebar-header {
+		justify-content: center;
+		padding: var(--sp-4) var(--sp-2) var(--sp-2);
 	}
 
 	.collapsed .nav-item {
@@ -215,9 +258,28 @@
 		padding: var(--sp-2);
 	}
 
-	.collapsed .nav-section,
+	.collapsed .nav-section {
+		padding: var(--sp-2);
+	}
+
 	.collapsed .sidebar-footer {
 		padding: var(--sp-2);
+	}
+
+	.collapsed .search-trigger {
+		justify-content: center;
+		padding: 7px;
+		border-color: transparent;
+		background: transparent;
+	}
+
+	.collapsed .search-trigger:hover {
+		background: var(--bg-hover);
+		border-color: transparent;
+	}
+
+	.collapsed .search-icon {
+		opacity: 0.8;
 	}
 
 	/* ── Tablet & Mobile (≤1024px) ── */
@@ -256,9 +318,21 @@
 		/* Show labels and badges even if desktop mode was collapsed */
 		.sidebar.collapsed .nav-label,
 		.sidebar.collapsed .nav-badge,
-		.sidebar.collapsed .logo-text,
-		.sidebar.collapsed .kbd {
+		.sidebar.collapsed .logo,
+		.sidebar.collapsed .search-label,
+		.sidebar.collapsed .search-kbd {
 			display: inline;
+		}
+
+		.sidebar.collapsed .search-trigger {
+			justify-content: flex-start;
+			padding: 7px var(--sp-3);
+			border-color: var(--border);
+			background: var(--bg-base);
+		}
+
+		.sidebar .collapse-toggle {
+			display: none;
 		}
 
 		.nav-item {

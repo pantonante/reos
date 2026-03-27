@@ -1,66 +1,54 @@
 # Re:OS
 
-A personal research operating system for collecting, reading, and connecting academic papers. Re:OS organizes papers into **threads** — narrative research investigations — instead of static folders, helping you trace how ideas connect across your reading.
+A local-first research OS that organizes papers into **threads** — narrative investigations — not folders. Add papers by Arxiv URL, read and annotate PDFs in-app, and trace how ideas connect across your reading.
 
 ## Features
 
-- **Inbox** — See unread and in-progress papers at a glance
-- **Library** — Browse your full collection with search, filtering by status/category, and card or table views
-- **Threads** — Group papers into research investigations with context notes, synthesis, and external links. Kanban board with drag-and-drop status management (active / paused / concluded). Threads can fork from other threads
-- **PDF Reader** — In-app PDF viewer with annotations (highlights, notes, questions, cross-references) that can be scoped to a specific thread
-- **Citation Graph** — Interactive canvas-based visualization of citation relationships between papers, filterable by thread or reading status
-- **Command Palette** — Quick navigation with `Cmd+K`
-- **Arxiv Integration** — Add papers by pasting an Arxiv URL or ID; metadata is fetched automatically
+- **Threads** — Group papers into research investigations with context notes, synthesis, and links. Kanban board with drag-and-drop. Fork threads to explore tangents.
+- **PDF Reader** — Built-in viewer with highlights, notes, questions, and cross-references, scoped per thread.
+- **AI Paper Summaries** — Get structured, critical summaries of any paper using Claude Code's built-in `/paper-reviewer` skill.
+- **Citation Graph** — Interactive visualization of how papers cite each other, filterable by thread or status.
+- **Arxiv Integration** — Paste an Arxiv URL or ID. Metadata and PDF are fetched automatically.
+- **Command Palette** — `Cmd+K` to navigate anywhere.
 
-## Stack
+Everything runs locally. No accounts, no cloud sync, no external services.
 
-- **SvelteKit** (Svelte 5, runes mode)
-- **better-sqlite3** — local SQLite database (zero config, auto-created on first run)
-- **pdfjs-dist** — client-side PDF rendering
-- **TypeScript** throughout
+## Requirements
 
-No external services required. Everything runs locally.
+- [Node.js](https://nodejs.org/) >= 18
+- [Claude Code](https://claude.ai/code) — required for AI-powered paper summaries (`/paper-reviewer`)
 
 ## Getting Started
 
 ```sh
+git clone https://github.com/antonap/reos.git
+cd reos
 npm install
 npm run dev
 ```
 
-The dev server starts at `http://localhost:5173`. The SQLite database is created automatically at `data/reos.db` on first access.
+Open `http://localhost:5173`. The SQLite database is created automatically on first run.
+
+### AI Paper Summaries
+
+With [Claude Code](https://claude.ai/code) installed, open a terminal in the project directory and run:
+
+```sh
+claude
+```
+
+Then use the `/paper-reviewer <path-to-pdf>` slash command to get a structured summary of any paper. It adapts to the paper type (survey, model/system, or theoretical) and produces a practical, builder-oriented analysis.
 
 ### PDF Storage
 
-PDFs are stored locally on disk. Configure the storage path in `src/lib/server/db.ts` to point to a directory on your machine (the default uses a Google Drive mount).
+PDFs are stored locally on disk. Configure the storage path in `src/lib/server/db.ts`.
 
-### Production Build
+## Stack
 
-```sh
-npm run build
-npm run preview
-```
-
-## Project Structure
-
-```
-src/
-  lib/
-    server/db.ts          # Database layer (SQLite, auto-creates schema)
-    types.ts               # Shared TypeScript interfaces
-    stores.svelte.ts       # Svelte 5 reactive stores
-    arxiv.ts               # Arxiv ID extraction & metadata fetching
-    components/            # Reusable components (PdfViewer, Sidebar, CommandPalette, etc.)
-  routes/
-    +page.svelte           # Inbox
-    library/               # Paper collection
-    threads/               # Thread board & individual thread views
-    paper/[id]/            # Paper detail with PDF viewer
-    graph/                 # Citation graph explorer
-    api/                   # REST API (papers, threads, annotations, notes, arxiv proxy, pdf proxy)
-data/
-  reos.db                  # SQLite database (auto-created)
-```
+- **SvelteKit** (Svelte 5, runes mode)
+- **better-sqlite3** — local SQLite, zero config
+- **pdfjs-dist** — client-side PDF rendering
+- **TypeScript** throughout
 
 ## License
 

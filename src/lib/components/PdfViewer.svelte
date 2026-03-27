@@ -301,7 +301,6 @@
 			<button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
 		</div>
 		<div class="pdf-toolbar-right">
-			<span class="mono hint desktop-only">Select text to annotate</span>
 			{#if onToggleFullscreen}
 				<button class="fullscreen-btn" onclick={onToggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
 					{#if isFullscreen}
