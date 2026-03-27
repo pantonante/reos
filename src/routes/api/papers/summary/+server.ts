@@ -22,7 +22,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	// Read the skill prompt template
-	const skillPath = path.resolve('..',  '.claude/skills/paper-reviewer/skill.md');
+	const skillPath = path.resolve('.claude', 'skills', 'paper-reviewer', 'skill.md');
 	let skillContent = '';
 	try {
 		const raw = fs.readFileSync(skillPath, 'utf-8');
