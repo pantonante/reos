@@ -18,6 +18,35 @@
 	let newTag = $state('');
 	let addingTag = $state(false);
 
+	// Resizable sidebar
+	let sidebarWidth = $state(280);
+	let isResizing = $state(false);
+	let mobileContextOpen = $state(false);
+	let panelFullscreen = $state(false);
+	const MIN_SIDEBAR = 220;
+	const MAX_SIDEBAR = 500;
+
+	function onResizeStart(e: PointerEvent) {
+		e.preventDefault();
+		isResizing = true;
+		const startX = e.clientX;
+		const startWidth = sidebarWidth;
+
+		function onMove(ev: PointerEvent) {
+			const delta = startX - ev.clientX;
+			sidebarWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, startWidth + delta));
+		}
+
+		function onUp() {
+			isResizing = false;
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+		}
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+	}
+
 	// Drag-and-drop status change state
 	let draggedPaperId = $state<string | null>(null);
 	let dropTargetStatus = $state<ReadingStatus | null>(null);
@@ -195,7 +224,7 @@
 		<a href="/threads">← Back to threads</a>
 	</div>
 {:else}
-	<div class="thread-layout">
+	<div class="thread-layout" class:resizing={isResizing} style="--sidebar-w: {sidebarWidth}px">
 		<!-- Main content -->
 		<div class="thread-main">
 			<header class="thread-header">
@@ -413,8 +442,44 @@
 			{/if}
 		</div>
 
+		<!-- Mobile sidebar toggle -->
+		<button
+			class="mobile-sidebar-toggle"
+			class:active={mobileContextOpen}
+			onclick={() => mobileContextOpen = !mobileContextOpen}
+			aria-label="Toggle thread sidebar"
+		>
+			{#if mobileContextOpen}
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+			{:else}
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+				</svg>
+			{/if}
+		</button>
+
+		<!-- Resize handle -->
+		<div class="resize-handle" onpointerdown={onResizeStart} role="separator" aria-label="Resize sidebar"></div>
+
 		<!-- Right sidebar -->
-		<aside class="thread-sidebar">
+		<aside class="thread-sidebar" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
+			<div class="sb-header">
+				<button
+					class="panel-expand-btn"
+					onclick={() => panelFullscreen = !panelFullscreen}
+					aria-label={panelFullscreen ? 'Exit fullscreen' : 'Expand fullscreen'}
+				>
+					{#if panelFullscreen}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+						</svg>
+					{:else}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+						</svg>
+					{/if}
+				</button>
+			</div>
 			<!-- Status -->
 			<div class="sb-section">
 				<h4 class="sb-label mono">Status</h4>
@@ -546,10 +611,57 @@
 	/* Layout */
 	.thread-layout {
 		display: grid;
-		grid-template-columns: 1fr 280px;
+		grid-template-columns: 1fr 0px var(--sidebar-w, 280px);
 		gap: 0;
 		margin: calc(-1 * var(--sp-8));
 		height: 100vh;
+		position: relative;
+	}
+
+	.thread-layout.resizing {
+		transition: none;
+		user-select: none;
+	}
+
+	/* Resize handle */
+	.resize-handle {
+		width: 6px;
+		cursor: col-resize;
+		background: transparent;
+		position: relative;
+		z-index: 5;
+		margin: 0 -3px;
+		transition: background var(--duration-fast);
+	}
+
+	.resize-handle::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 4px;
+		height: 32px;
+		border-radius: 2px;
+		background: var(--border);
+		opacity: 0;
+		transition: opacity var(--duration-fast);
+	}
+
+	.resize-handle:hover,
+	.thread-layout.resizing .resize-handle {
+		background: var(--accent);
+		opacity: 0.3;
+	}
+
+	.resize-handle:hover::after,
+	.thread-layout.resizing .resize-handle::after {
+		opacity: 1;
+	}
+
+	/* Mobile sidebar toggle — hidden on desktop */
+	.mobile-sidebar-toggle {
+		display: none;
 	}
 
 	.thread-main {
@@ -1065,6 +1177,46 @@
 		height: 100vh;
 	}
 
+	.sb-header {
+		display: flex;
+		justify-content: flex-end;
+		margin-bottom: var(--sp-2);
+	}
+
+	.panel-expand-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: var(--sp-2);
+		color: var(--text-tertiary);
+		border-radius: 4px;
+		transition: color var(--duration-fast);
+	}
+
+	.panel-expand-btn:hover {
+		color: var(--accent);
+	}
+
+	/* Fullscreen sidebar on desktop */
+	.thread-sidebar.panel-fullscreen {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		border-left: none;
+		z-index: 30;
+		padding: var(--sp-8);
+	}
+
+	.thread-sidebar.panel-fullscreen > :not(.sb-header) {
+		max-width: 960px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
 	.sb-section {
 		margin-bottom: var(--sp-6);
 	}
@@ -1281,15 +1433,61 @@
 			height: auto;
 		}
 
+		.resize-handle {
+			display: none;
+		}
+
 		.thread-main {
 			padding: var(--sp-6);
 		}
 
+		/* Fullscreen overlay sidebar on iPad */
 		.thread-sidebar {
+			position: fixed;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			left: 0;
+			width: 100%;
 			border-left: none;
-			border-top: 1px solid var(--border);
-			height: auto;
-			padding: var(--sp-5);
+			height: 100%;
+			padding: var(--sp-6);
+			z-index: 20;
+			overflow-y: auto;
+			transform: translateX(100%);
+			transition: transform var(--duration-normal) var(--ease-out);
+		}
+
+		.thread-sidebar.mobile-open {
+			transform: translateX(0);
+		}
+
+		/* Floating toggle button */
+		.mobile-sidebar-toggle {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			position: fixed;
+			bottom: var(--sp-4);
+			right: var(--sp-4);
+			width: 48px;
+			height: 48px;
+			border-radius: 50%;
+			background: var(--accent);
+			color: var(--accent-text);
+			box-shadow: var(--shadow-lg);
+			z-index: 19;
+			transition: all var(--duration-fast);
+		}
+
+		.mobile-sidebar-toggle.active {
+			background: var(--bg-surface);
+			color: var(--text-primary);
+			z-index: 21;
+		}
+
+		.mobile-sidebar-toggle:hover {
+			transform: scale(1.05);
 		}
 	}
 </style>

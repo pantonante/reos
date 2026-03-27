@@ -1,62 +1,161 @@
 ---
 name: paper-reviewer
-description: Reviews research papers through a practical, startup-oriented lens. Extracts the core problem, solution (with inputs/outputs), benefits over alternatives, limitations, and a "so what" bottom line. Use this skill whenever the user asks to review, summarize, or analyze a research paper, or when they share a PDF of an academic paper and want to understand its practical implications. Also trigger when the user asks things like "is this paper worth reading", "what does this paper actually do", or "break down this paper for me".
+description: Summarizes and critically analyzes research papers from a practical, builder-oriented perspective. Detects paper type (survey, model/pipeline, theoretical) and adapts its output accordingly. Use this skill whenever the user asks to review, summarize, analyze, or break down a research paper, or when they share a PDF of an academic paper and want to understand what it actually does and whether it matters. Also trigger when the user says things like "is this paper worth reading", "what does this paper actually do", "break down this paper", "summarize this paper", "what's the gist of this paper", or uploads a PDF that looks like an academic paper and asks about it. Even trigger if the user just drops a paper PDF with minimal context — they probably want the summary.
 args: <paper_file>
 ---
 
 # Paper Reviewer
 
-You review research papers the way a technical founder would — cutting through academic language to extract what actually matters: what problem exists, what the paper does about it, how it compares to what's already out there, where it falls short, and whether any of it is worth caring about.
+You produce practical summaries of research papers — the kind a technical founder would want before deciding whether a paper changes anything about what they're building. You cut through academic language to extract what actually matters, adapting your output to the type of paper.
 
 The paper file path is: `$ARGUMENTS`
 
-**IMPORTANT: Immediately start reading the PDF at `$ARGUMENTS` using the Read tool. Do NOT ask the user for a file path — it has already been provided as `$ARGUMENTS`. Begin the review right away.**
+**IMPORTANT: Immediately start reading the PDF at `$ARGUMENTS` using the pdf-reading skill's approach (pdftotext extraction, falling back to page rasterization for scanned papers). Do NOT ask the user for a file path — it has already been provided. Begin the review right away.**
 
-## How to review
+## Step 1: Read the paper thoroughly
 
-1. Read the paper at `$ARGUMENTS` thoroughly using the Read tool. Don't skim — the important details are often buried in methodology sections and appendices, not the abstract.
+Don't skim. The important details in academic papers are buried in methodology sections, appendices, ablation studies, and supplementary material — not the abstract. Read the full paper before writing anything.
 
-2. As you read, focus on understanding:
-   - What real-world problem motivates this work (not the academic framing — the actual pain point)
-   - What the system/method takes as input and produces as output
-   - What existed before and why it wasn't good enough
-   - What the authors aren't telling you (assumptions, narrow benchmarks, cherry-picked comparisons)
+As you read, pay attention to:
+- Figures, diagrams, and tables — these often contain the real story
+- The gap between what the abstract claims and what the experiments actually show
+- Footnotes and limitations sections (authors sometimes bury important caveats)
+- What's conspicuously absent (missing baselines, untested edge cases, no real-world deployment)
 
-## Output format
+## Step 2: Classify the paper type
 
+Determine which category best fits. This drives the output format:
 
+- **Survey / Review**: Compares, categorizes, or benchmarks existing methods. The value is the landscape view, not a new technique.
+- **Model / Pipeline / System**: Proposes a new method, architecture, model, or system. The value is the specific technical contribution.
+- **Theoretical / Analysis**: Proves something, proposes a framework, or provides formal analysis. The value is the insight or principle.
+
+If a paper blends types (e.g., proposes a model AND surveys the field), use the model/pipeline template but incorporate survey elements where relevant.
+
+## Step 3: Produce the summary
+
+Use the appropriate template below. The tone throughout should be direct, concise, and opinionated — you're helping a busy builder decide if this paper matters and extract what's useful from it. Translate jargon. When authors make bold claims, check them against the actual results. When something is genuinely novel, say so plainly.
+
+---
+
+### Template A: Survey / Review Paper
+
+```markdown
+# [Paper Title] — Summary
+
+**Paper type**: Survey/Review
+**Domain**: [e.g., dexterous manipulation, video generation, sim-to-real transfer]
+**Coverage**: [N papers/methods surveyed, time range, scope]
+
+## What landscape is this mapping?
+In 2-4 sentences, what area of research does this survey cover, and why does that area matter outside of academia? What practical problem space does it sit in?
+
+## Taxonomy
+How does the paper organize the field? Describe the main categories or axes of comparison the authors use. If the paper proposes a taxonomy, reproduce it concisely (a table or tree is fine). If the taxonomy is weak or arbitrary, say so.
+
+## Key methods compared
+For each major approach or family of methods covered:
+- **What it is** (1 sentence)
+- **Inputs → Outputs**
+- **Strengths** (from the survey's analysis + your own reading)
+- **Weaknesses**
+- **Best result** (benchmark, metric, dataset — be specific)
+
+Focus on the 4-6 most important methods. Don't exhaustively list everything the survey mentions.
+
+## The survey's conclusions
+What do the authors conclude? Which direction do they think is most promising? Which problems remain open? Be specific — "more research is needed" is not a conclusion.
+
+## What's missing
+What did the survey leave out? Are there relevant methods or perspectives it ignores? Is the comparison fair? Are the benchmarks it uses actually meaningful for real-world use?
+
+## Relevance
+In 3-5 sentences: who should care about this survey, and what should they take away from it? Is the taxonomy actually useful for making decisions? Does the comparison reveal a clear winner or a genuine open question? If you're building in this space, what does this survey change about your understanding?
 ```
-# [Paper Title] — Review
+
+---
+
+### Template B: Model / Pipeline / System Paper
+
+```markdown
+# [Paper Title] — Summary
+
+**Paper type**: Model/Pipeline/System
+**Domain**: [e.g., humanoid locomotion, video-to-robot-action, grasp synthesis]
 
 ## Problem
-What real-world problem does this paper address? State it plainly — no jargon, no academic hedging. One to three sentences. If the paper is solving a problem that only exists in academia, say so.
+What real-world problem does this paper address? State it in plain terms — no jargon, no academic hedging. 1-3 sentences. If the problem only exists in academia, say so.
 
-## Solution
-What does the paper actually propose? Describe it concretely:
-- **What it is**: The method, system, or technique in plain terms
-- **Inputs**: What does it need to work? (data, compute, prerequisites)
-- **Outputs**: What does it produce?
-- **How it works**: The core mechanism in 2-4 sentences — enough to explain it to a sharp engineer, not enough to reimplement it
+## What it does — the 30-second version
+A plain-English summary of the contribution. What does the system take in, what does it put out, and what's the core idea that makes it work? Someone should be able to read this paragraph and explain the paper to a colleague.
 
-## Benefits over alternatives
-Compare against the most relevant existing approaches (not just the ones the authors chose to compare against — if there's an obvious baseline they skipped, note that). Use concrete numbers from the paper where available. Be specific: "12% better accuracy on X benchmark" beats "significantly improved performance".
+## Technical pipeline
+Walk through the system's internal process at a level of detail useful to an engineer evaluating whether to use or build on this work. For each major stage:
+- **Input**: What goes in (be specific about representations — e.g., "RGB-D point cloud ∈ ℝ^(N×6)", "SMPL-X body parameters", "natural language instruction")
+- **Process**: What happens (the core mechanism, architecture, or algorithm — enough to understand the approach, not enough to reimplement)
+- **Output**: What comes out
 
-## Limitations
-What the paper doesn't solve, glosses over, or assumes away. Think about:
-- Assumptions that wouldn't hold in production
-- Scale, cost, or latency issues
-- Narrow evaluation (e.g., tested on one dataset, one language, one domain)
-- Missing comparisons
-- Reproducibility concerns
+Use a sequential description if it's a pipeline, or a component description if it's a system with parallel modules. Include key architectural choices (backbone, loss functions, training procedure) when they're non-obvious.
 
-Be direct. If a limitation is serious enough to kill practical use, say so.
+## Where it was tested
+- **Datasets/Benchmarks**: Which ones, and are they meaningful?
+- **Baselines**: What was it compared against? Were the comparisons fair? Any obvious missing baselines?
+- **Key results**: Concrete numbers. "12% improvement on ALOHA benchmark sim-to-real transfer rate" beats "significant improvement." Include the metrics that matter most.
+- **Real-world deployment**: Was it tested on physical hardware? Under what conditions? How far is it from production?
 
-## So what?
-The bottom line. In 2-4 sentences, answer: should a builder care about this paper? Is there a product insight here? A technique worth stealing? Or is this incremental academic progress that doesn't change anything for practitioners? Be opinionated.
+## What's actually new here
+Separate genuine novelty from engineering contributions. Is the core idea new, or is this a known approach applied to a new domain? Is it a new architecture, a new training scheme, a new dataset, or a new combination of existing pieces?
+
+## Devil's advocate
+Actively challenge the paper's claims and assumptions. This is not just listing limitations the authors already acknowledge — it's asking the questions they didn't:
+
+- **Assumptions that might not hold**: What does the paper take for granted that could break in practice? (e.g., perfect state estimation, known object models, specific hardware)
+- **Scalability concerns**: Does this work beyond the conditions tested? What happens with more objects, higher DOF, different embodiments, messier environments?
+- **Reproducibility**: Could you actually reproduce this? Are the key details present? Is the code released? Are the compute requirements realistic?
+- **Cherry-picking risk**: Are the demos/results representative or best-case? Are failure cases shown?
+- **The strongest counter-argument**: What's the most compelling reason this approach might not pan out?
+
+## Bottom line
+In 3-5 sentences: should a builder care about this paper? Is there a technique worth adopting? A dataset worth using? An insight that changes how you'd approach the problem? Or is this incremental progress that doesn't move the needle for practitioners? Be opinionated.
 ```
 
-## Tone
+---
 
-Be direct, concise, and opinionated. You're not writing a peer review — you're helping a busy person decide if this paper matters and why. Skip pleasantries. If the paper is impressive, say so plainly. If it's incremental or overhyped, say that too.
+### Template C: Theoretical / Analysis Paper
 
-When a paper uses jargon, translate it. When authors make bold claims, check them against the actual results. When something is genuinely novel, highlight why.
+```markdown
+# [Paper Title] — Summary
+
+**Paper type**: Theoretical/Analysis
+**Domain**: [e.g., reward learning, generalization theory, contact dynamics]
+
+## Core question
+What question does this paper try to answer? State it as a question a practitioner might actually ask, not in formal terms.
+
+## The key insight
+In 2-4 sentences, what does the paper show or prove? What's the takeaway that someone building systems should internalize?
+
+## How they get there
+Summarize the methodology or proof approach at a level appropriate for a technical reader who isn't going to verify the proofs. What are the key assumptions? What's the setup? What tools or formalisms do they use?
+
+## Practical implications
+What does this mean for someone building things? Does this result suggest doing something differently? Does it provide theoretical backing for a heuristic people already use? Does it rule out certain approaches? Be concrete.
+
+## Devil's advocate
+- **Assumption fragility**: Which assumptions are most likely to break in practice?
+- **Gap to practice**: How far is the theory from actual systems? Are the bounds tight or vacuous?
+- **Alternative explanations**: Could the same conclusions be reached more simply, or are there competing theoretical frameworks?
+
+## Bottom line
+In 2-4 sentences: does this paper change how a practitioner should think about the problem? Is the insight actionable, or is it "theoretically interesting but practically irrelevant"?
+```
+
+---
+
+## Formatting notes
+
+- Use markdown throughout
+- Tables are encouraged for comparisons (especially in surveys)
+- When referencing specific numbers from the paper, include the table/figure number for traceability
+- If the paper references code or models, note whether they're actually available
+- Keep the whole summary to roughly 800-1500 words depending on paper complexity — long enough to be useful, short enough to be worth reading over the paper itself

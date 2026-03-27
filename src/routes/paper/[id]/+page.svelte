@@ -10,6 +10,34 @@
 	// Mobile context panel state
 	let mobileContextOpen = $state(false);
 
+	// Resizable sidebar
+	let sidebarWidth = $state(380);
+	let isResizing = $state(false);
+	let panelFullscreen = $state(false);
+	const MIN_SIDEBAR = 280;
+	const MAX_SIDEBAR = 600;
+
+	function onResizeStart(e: PointerEvent) {
+		e.preventDefault();
+		isResizing = true;
+		const startX = e.clientX;
+		const startWidth = sidebarWidth;
+
+		function onMove(ev: PointerEvent) {
+			const delta = startX - ev.clientX;
+			sidebarWidth = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, startWidth + delta));
+		}
+
+		function onUp() {
+			isResizing = false;
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+		}
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+	}
+
 	function toggleFullscreen() {
 		ui.pdfFullscreen = !ui.pdfFullscreen;
 		if (ui.pdfFullscreen) mobileContextOpen = false;
@@ -207,7 +235,7 @@
 	</div>
 {:else}
 	<div class="paper-detail" class:fullscreen={ui.pdfFullscreen}>
-		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen}>
+		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} style="--sidebar-w: {sidebarWidth}px">
 			<!-- PDF panel (left) -->
 			<div class="pdf-panel">
 				<div class="pdf-header-bar">
@@ -253,8 +281,11 @@
 				{/if}
 			</button>
 
+			<!-- Resize handle -->
+			<div class="resize-handle" onpointerdown={onResizeStart} role="separator" aria-label="Resize sidebar"></div>
+
 			<!-- Context panel (right) -->
-			<div class="context-panel" class:mobile-open={mobileContextOpen}>
+			<div class="context-panel" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
 				<div class="panel-tabs">
 					{#each ['summary', 'info', 'annotations', 'notes', 'threads'] as tab}
 						<button
@@ -270,6 +301,21 @@
 							{/if}
 						</button>
 					{/each}
+					<button
+						class="panel-expand-btn"
+						onclick={() => panelFullscreen = !panelFullscreen}
+						aria-label={panelFullscreen ? 'Exit fullscreen panel' : 'Expand panel fullscreen'}
+					>
+						{#if panelFullscreen}
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+							</svg>
+						{:else}
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+							</svg>
+						{/if}
+					</button>
 				</div>
 
 				<div class="panel-content">
@@ -554,13 +600,54 @@
 
 	.reader-layout {
 		display: grid;
-		grid-template-columns: 1fr 380px;
+		grid-template-columns: 1fr 0px var(--sidebar-w, 380px);
 		height: 100%;
 		transition: grid-template-columns var(--duration-normal) var(--ease-out);
 	}
 
+	.reader-layout.resizing {
+		transition: none;
+		user-select: none;
+	}
+
 	.reader-layout.fullscreen {
 		grid-template-columns: 1fr;
+	}
+
+	/* Resize handle */
+	.resize-handle {
+		width: 6px;
+		cursor: col-resize;
+		background: transparent;
+		position: relative;
+		z-index: 5;
+		margin: 0 -3px;
+		transition: background var(--duration-fast);
+	}
+
+	.resize-handle::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 4px;
+		height: 32px;
+		border-radius: 2px;
+		background: var(--border);
+		opacity: 0;
+		transition: opacity var(--duration-fast);
+	}
+
+	.resize-handle:hover,
+	.reader-layout.resizing .resize-handle {
+		background: var(--accent);
+		opacity: 0.3;
+	}
+
+	.resize-handle:hover::after,
+	.reader-layout.resizing .resize-handle::after {
+		opacity: 1;
 	}
 
 	/* Mobile context toggle — hidden on desktop */
@@ -658,6 +745,39 @@
 		background: var(--bg-surface);
 		padding: 0 4px;
 		border-radius: 3px;
+	}
+
+	.panel-expand-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: var(--sp-3);
+		color: var(--text-tertiary);
+		flex-shrink: 0;
+		transition: color var(--duration-fast);
+	}
+
+	.panel-expand-btn:hover {
+		color: var(--accent);
+	}
+
+	/* Fullscreen context panel on desktop */
+	.context-panel.panel-fullscreen {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		max-width: 100%;
+		border-left: none;
+		z-index: 30;
+	}
+
+	.context-panel.panel-fullscreen .panel-content {
+		max-width: 960px;
+		margin: 0 auto;
+		width: 100%;
 	}
 
 	.panel-content {
@@ -1296,27 +1416,32 @@
 		color: var(--text-tertiary);
 	}
 
-	/* ── Tablet (≤1024px) ── */
+	/* ── Tablet / iPad (≤1024px) ── */
 	@media (max-width: 1024px) {
 		.reader-layout {
 			grid-template-columns: 1fr;
 			position: relative;
 		}
 
+		.resize-handle {
+			display: none;
+		}
+
 		.pdf-panel {
 			min-height: 0;
 		}
 
-		/* Context panel as right-side slide-in overlay on tablet */
+		/* Context panel as fullscreen overlay on iPad */
 		.context-panel {
 			position: absolute;
 			top: 0;
 			right: 0;
 			bottom: 0;
-			width: 360px;
-			max-width: 85vw;
-			border-left: 1px solid var(--border);
-			box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+			left: 0;
+			width: 100%;
+			max-width: 100%;
+			border-left: none;
+			box-shadow: none;
 			transform: translateX(100%);
 			transition: transform var(--duration-normal) var(--ease-out);
 			z-index: 20;
@@ -1347,7 +1472,7 @@
 		.mobile-context-toggle.active {
 			background: var(--bg-surface);
 			color: var(--text-primary);
-			right: calc(360px + var(--sp-4));
+			z-index: 21;
 		}
 
 		.mobile-context-toggle:hover {
@@ -1378,6 +1503,7 @@
 
 	/* ── Fullscreen override ── */
 	.reader-layout.fullscreen .context-panel,
+	.reader-layout.fullscreen .resize-handle,
 	.reader-layout.fullscreen .mobile-context-toggle {
 		display: none;
 	}
@@ -1388,11 +1514,6 @@
 
 	/* ── Phone (≤480px) ── */
 	@media (max-width: 480px) {
-		.context-panel {
-			width: 100vw;
-			max-width: 100vw;
-		}
-
 		.mobile-context-toggle.active {
 			right: var(--sp-4);
 			bottom: var(--sp-4);
