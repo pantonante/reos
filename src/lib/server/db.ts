@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { Paper, Thread, Annotation, Note, ThreadPaper, ThreadLink } from '$lib/types';
+import type { Paper, Thread, Annotation, Note, ThreadPaper, ThreadLink, Chat, ChatMessage } from '$lib/types';
 
 const DATA_DIR = path.resolve('data');
 const DB_PATH = path.join(DATA_DIR, 'reos.db');
@@ -87,6 +87,23 @@ function initSchema(db: Database.Database) {
 			color TEXT NOT NULL DEFAULT '',
 			createdAt TEXT NOT NULL,
 			linkedPaperId TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS chats (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			claudeSessionId TEXT,
+			createdAt TEXT NOT NULL,
+			updatedAt TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS chat_messages (
+			id TEXT PRIMARY KEY,
+			chatId TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			createdAt TEXT NOT NULL,
+			FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE
 		);
 	`);
 
@@ -323,5 +340,47 @@ export const db = {
 
 	removeNote(id: string) {
 		getDb().prepare('DELETE FROM notes WHERE id = ?').run(id);
+	},
+
+	// Chats
+	getAllChats(): Chat[] {
+		return getDb().prepare('SELECT * FROM chats ORDER BY updatedAt DESC').all() as Chat[];
+	},
+
+	getChat(id: string): Chat | undefined {
+		return getDb().prepare('SELECT * FROM chats WHERE id = ?').get(id) as Chat | undefined;
+	},
+
+	getChatMessages(chatId: string): ChatMessage[] {
+		return getDb().prepare('SELECT * FROM chat_messages WHERE chatId = ? ORDER BY createdAt ASC').all(chatId) as ChatMessage[];
+	},
+
+	addChat(chat: Chat) {
+		getDb().prepare('INSERT INTO chats (id, title, claudeSessionId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)').run(
+			chat.id, chat.title, chat.claudeSessionId, chat.createdAt, chat.updatedAt
+		);
+	},
+
+	updateChat(id: string, data: Partial<Chat>) {
+		const fields: string[] = [];
+		const values: any[] = [];
+		for (const [key, val] of Object.entries(data)) {
+			if (key === 'id') continue;
+			fields.push(`"${key}" = ?`);
+			values.push(val ?? null);
+		}
+		if (fields.length === 0) return;
+		values.push(id);
+		getDb().prepare(`UPDATE chats SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+	},
+
+	removeChat(id: string) {
+		getDb().prepare('DELETE FROM chats WHERE id = ?').run(id);
+	},
+
+	addChatMessage(msg: ChatMessage) {
+		getDb().prepare('INSERT INTO chat_messages (id, chatId, role, content, createdAt) VALUES (?, ?, ?, ?, ?)').run(
+			msg.id, msg.chatId, msg.role, msg.content, msg.createdAt
+		);
 	},
 };

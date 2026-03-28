@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { ui, papers, threads, annotations, notes } from '$lib/stores.svelte';
-	import type { ReadingStatus, AnnotationType } from '$lib/types';
+	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
+	import type { ReadingStatus, AnnotationType, ChatMessage } from '$lib/types';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
+	import ChatMessages from '$lib/components/ChatMessages.svelte';
+	import ChatInput from '$lib/components/ChatInput.svelte';
 	import { marked } from 'marked';
 	import markedKatex from 'marked-katex-extension';
 
@@ -68,9 +70,127 @@
 		notes.items.filter(n => n.paperId === page.params.id)
 	);
 
-	let activeTab = $state<'summary' | 'info' | 'notes'>('summary');
+	let activeTab = $state<'summary' | 'info' | 'notes' | 'chat'>('summary');
 	let summaryLoading = $state(false);
 	let summaryError = $state<string | null>(null);
+
+	// Chat state for paper context
+	let chatMessages = $state<ChatMessage[]>([]);
+	let chatStreaming = $state(false);
+	let chatStreamingContent = $state('');
+	let paperChatId = $state<string | null>(null);
+
+	// Find or create a chat for this paper
+	async function ensurePaperChat(): Promise<string> {
+		if (paperChatId) return paperChatId;
+		// Look for existing chat with matching title pattern
+		const existing = chats.items.find(c => c.title === `Paper: ${paper?.title?.slice(0, 40)}`);
+		if (existing) {
+			paperChatId = existing.id;
+			await loadChatMessages(existing.id);
+			return existing.id;
+		}
+		// Create new chat
+		const now = new Date().toISOString();
+		const chat = {
+			id: `c${Date.now()}`,
+			title: `Paper: ${paper?.title?.slice(0, 40) ?? 'Untitled'}`,
+			claudeSessionId: null,
+			createdAt: now,
+			updatedAt: now,
+		};
+		await chats.add(chat);
+		paperChatId = chat.id;
+		return chat.id;
+	}
+
+	async function loadChatMessages(chatId: string) {
+		try {
+			const res = await fetch(`/api/chats/${chatId}/messages`);
+			if (res.ok) chatMessages = await res.json();
+		} catch { /* offline */ }
+	}
+
+	// Reset chat state when paper changes
+	let lastPaperId = $state<string | undefined>(undefined);
+	$effect(() => {
+		const id = page.params.id;
+		if (id !== lastPaperId) {
+			lastPaperId = id;
+			paperChatId = null;
+			chatMessages = [];
+			chatStreaming = false;
+			chatStreamingContent = '';
+		}
+	});
+
+	async function sendChatMessage(text: string) {
+		const chatId = await ensurePaperChat();
+		const isFirstMessage = chatMessages.length === 0;
+
+		const userMsg: ChatMessage = {
+			id: `m${Date.now()}`,
+			chatId,
+			role: 'user',
+			content: text,
+			createdAt: new Date().toISOString(),
+		};
+		chatMessages = [...chatMessages, userMsg];
+		chatStreaming = true;
+		chatStreamingContent = '';
+
+		try {
+			const res = await fetch(`/api/chats/${chatId}/stream`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message: text, ...(isFirstMessage && paper ? { paperId: paper.id } : {}) }),
+			});
+
+			if (!res.ok || !res.body) {
+				chatStreaming = false;
+				return;
+			}
+
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || '';
+
+				for (const line of lines) {
+					if (!line.startsWith('data: ')) continue;
+					try {
+						const event = JSON.parse(line.slice(6));
+						if (event.type === 'text') chatStreamingContent += event.text;
+						if (event.type === 'done') {
+							chatMessages = [...chatMessages, {
+								id: `m${Date.now() + 1}`,
+								chatId,
+								role: 'assistant',
+								content: chatStreamingContent,
+								createdAt: new Date().toISOString(),
+							}];
+							chatStreamingContent = '';
+							chatStreaming = false;
+						}
+						if (event.type === 'error') {
+							chatStreamingContent += `\n\nError: ${event.error}`;
+							chatStreaming = false;
+						}
+					} catch { /* skip */ }
+				}
+			}
+		} catch {
+			chatStreaming = false;
+			chatStreamingContent = '';
+		}
+	}
 
 	const summaryHtml = $derived(paper?.summary ? marked(paper.summary) : '');
 
@@ -356,15 +476,23 @@
 			<!-- Context panel (right) -->
 			<div class="context-panel" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
 				<div class="panel-tabs">
-					{#each ['summary', 'info', 'notes'] as tab}
+					{#each ['summary', 'info', 'notes', 'chat'] as tab}
 						<button
 							class="panel-tab"
 							class:active={activeTab === tab}
-							onclick={() => activeTab = tab as typeof activeTab}
+							onclick={() => {
+								activeTab = tab as typeof activeTab;
+								if (tab === 'chat' && chatMessages.length === 0 && !paperChatId) {
+									ensurePaperChat();
+								}
+							}}
 						>
 							{tab.charAt(0).toUpperCase() + tab.slice(1)}
 							{#if tab === 'notes' && (paperAnnotations.length + paperNotes.length) > 0}
 								<span class="tab-count">{paperAnnotations.length + paperNotes.length}</span>
+							{/if}
+							{#if tab === 'chat' && chatMessages.length > 0}
+								<span class="tab-count">{chatMessages.length}</span>
 							{/if}
 						</button>
 					{/each}
@@ -602,6 +730,12 @@
 								<label class="field-label mono">Abstract</label>
 								<p class="abstract-text">{paper.abstract}</p>
 							</div>
+						</div>
+
+					{:else if activeTab === 'chat'}
+						<div class="chat-tab">
+							<ChatMessages messages={chatMessages} isStreaming={chatStreaming} streamingContent={chatStreamingContent} />
+							<ChatInput onsend={sendChatMessage} disabled={chatStreaming} />
 						</div>
 
 					{:else if activeTab === 'notes'}
@@ -1415,6 +1549,15 @@
 	}
 
 	/* Notes tab */
+	.chat-tab {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
+		margin: calc(-1 * var(--sp-5));
+		margin-top: 0;
+	}
+
 	.notes-tab {
 		display: flex;
 		flex-direction: column;

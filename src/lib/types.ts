@@ -73,3 +73,19 @@ export interface MatrixAttribute {
 	name: string;
 	threadId: string;
 }
+
+export interface ChatMessage {
+	id: string;
+	chatId: string;
+	role: 'user' | 'assistant';
+	content: string;
+	createdAt: string;
+}
+
+export interface Chat {
+	id: string;
+	title: string;
+	claudeSessionId: string | null;
+	createdAt: string;
+	updatedAt: string;
+}

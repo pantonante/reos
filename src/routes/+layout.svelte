@@ -5,7 +5,7 @@
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
-	import { ui, papers, threads, annotations, notes } from '$lib/stores.svelte';
+	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 
@@ -20,6 +20,7 @@
 		threads.load();
 		annotations.load();
 		notes.load();
+		chats.load();
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
