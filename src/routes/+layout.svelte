@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import 'katex/dist/katex.min.css';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
