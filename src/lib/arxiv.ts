@@ -39,6 +39,7 @@ export async function fetchArxivPaper(arxivId: string): Promise<Paper> {
 		arxivUrl: `https://arxiv.org/abs/${arxivId}`,
 		addedAt: new Date().toISOString(),
 		citations: [],
+		links: [],
 		summary: null,
 		summaryDate: null,
 	};

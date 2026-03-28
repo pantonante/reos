@@ -101,6 +101,9 @@ function initSchema(db: Database.Database) {
 		// Set today's date for existing summaries
 		db.exec(`UPDATE papers SET summaryDate = '${new Date().toISOString()}' WHERE summary IS NOT NULL`);
 	}
+	if (!colNames.includes('links')) {
+		db.exec("ALTER TABLE papers ADD COLUMN links TEXT NOT NULL DEFAULT '[]'");
+	}
 }
 
 export const db = {
@@ -113,6 +116,7 @@ export const db = {
 			categories: JSON.parse(r.categories),
 			tags: JSON.parse(r.tags),
 			citations: JSON.parse(r.citations),
+			links: JSON.parse(r.links || '[]'),
 			rating: r.rating ?? null,
 			summary: r.summary ?? null,
 			summaryDate: r.summaryDate ?? null,
@@ -128,6 +132,7 @@ export const db = {
 			categories: JSON.parse(r.categories),
 			tags: JSON.parse(r.tags),
 			citations: JSON.parse(r.citations),
+			links: JSON.parse(r.links || '[]'),
 			rating: r.rating ?? null,
 			summary: r.summary ?? null,
 			summaryDate: r.summaryDate ?? null,
@@ -136,21 +141,21 @@ export const db = {
 
 	addPaper(paper: Paper) {
 		getDb().prepare(`
-			INSERT INTO papers (id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, citations, summary, summaryDate)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO papers (id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, citations, links, summary, summaryDate)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`).run(
 			paper.id, paper.arxivId, paper.title, JSON.stringify(paper.authors),
 			paper.abstract, paper.publishedDate, JSON.stringify(paper.categories),
 			JSON.stringify(paper.tags), paper.readingStatus, paper.rating,
 			paper.pdfPath, paper.arxivUrl, paper.addedAt, JSON.stringify(paper.citations),
-			paper.summary ?? null, paper.summaryDate ?? null
+			JSON.stringify(paper.links || []), paper.summary ?? null, paper.summaryDate ?? null
 		);
 	},
 
 	updatePaper(id: string, data: Partial<Paper>) {
 		const fields: string[] = [];
 		const values: any[] = [];
-		const jsonFields = ['authors', 'categories', 'tags', 'citations'];
+		const jsonFields = ['authors', 'categories', 'tags', 'citations', 'links'];
 
 		for (const [key, val] of Object.entries(data)) {
 			if (key === 'id') continue;

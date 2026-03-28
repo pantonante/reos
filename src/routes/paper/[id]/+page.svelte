@@ -98,6 +98,31 @@
 	}
 	let noteInput = $state('');
 	let editingTags = $state(false);
+	let addingLink = $state(false);
+	let linkInput = $state('');
+
+	function getDomain(url: string): string {
+		try {
+			return new URL(url).hostname.replace(/^www\./, '');
+		} catch {
+			return url;
+		}
+	}
+
+	function addLink() {
+		if (!paper || !linkInput.trim()) return;
+		let url = linkInput.trim();
+		if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+		const links = [...(paper.links || []), url];
+		papers.update(paper.id, { links });
+		linkInput = '';
+		addingLink = false;
+	}
+
+	function removeLink(url: string) {
+		if (!paper) return;
+		papers.update(paper.id, { links: paper.links.filter(l => l !== url) });
+	}
 	let tagInput = $state('');
 
 	// Add-to-thread dropdown
@@ -485,6 +510,34 @@
 							<div class="field">
 								<label class="field-label mono">Arxiv</label>
 								<a href={paper.arxivUrl} target="_blank" rel="noopener" class="field-link mono">{paper.arxivId} ↗</a>
+							</div>
+
+							<!-- Links -->
+							<div class="field">
+								<label class="field-label mono">Links</label>
+								<div class="tag-list editable">
+									{#each (paper.links || []) as link}
+										<a href={link} target="_blank" rel="noopener" class="tag mono removable link-tag" onclick={(e) => e.stopPropagation()}>
+											{getDomain(link)} ↗
+											<button class="link-remove" onclick={(e) => { e.preventDefault(); e.stopPropagation(); removeLink(link); }}>×</button>
+										</a>
+									{/each}
+									{#if addingLink}
+										<form class="tag-form" onsubmit={e => { e.preventDefault(); addLink(); }}>
+											<!-- svelte-ignore a11y_autofocus -->
+											<input
+												type="text"
+												class="tag-input"
+												placeholder="https://…"
+												bind:value={linkInput}
+												autofocus
+												onblur={() => { if (!linkInput) addingLink = false; }}
+											/>
+										</form>
+									{:else}
+										<button class="tag add-tag" onclick={() => addingLink = true}>+</button>
+									{/if}
+								</div>
 							</div>
 
 							<!-- Internal citations -->
@@ -965,6 +1018,38 @@
 	.removable:hover {
 		background: var(--status-unread);
 		color: white;
+	}
+
+	.link-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		text-decoration: none;
+		color: var(--accent);
+		background: var(--accent-muted);
+	}
+
+	.link-tag:hover {
+		background: var(--accent-muted);
+		color: var(--accent);
+	}
+
+	.link-remove {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		margin: 0 -2px 0 0;
+		width: 14px;
+		height: 14px;
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		border-radius: 2px;
+		line-height: 1;
+	}
+
+	.link-remove:hover {
+		color: var(--status-unread);
 	}
 
 	.add-tag {

@@ -17,6 +17,7 @@ export interface Paper {
 	arxivUrl: string;
 	addedAt: string;
 	citations: string[]; // arxiv IDs of papers this one cites (that are in our library)
+	links: string[]; // external URLs associated with this paper
 	summary: string | null; // AI-generated paper review (markdown)
 	summaryDate: string | null; // ISO date when summary was generated
 }
