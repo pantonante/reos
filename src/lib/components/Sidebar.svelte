@@ -73,6 +73,9 @@
 							<line x1="12" y1="8" x2="19" y2="16"/>
 						</svg>
 					{/if}
+					{#if ui.sidebarCollapsed && item.badge > 0}
+						<span class="nav-badge-dot">{item.badge}</span>
+					{/if}
 				</span>
 				{#if !ui.sidebarCollapsed}
 					<span class="nav-label">{item.label}</span>
@@ -183,12 +186,32 @@
 	}
 
 	.nav-icon {
+		position: relative;
 		flex-shrink: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		width: 20px;
 		height: 20px;
+	}
+
+	.nav-badge-dot {
+		position: absolute;
+		top: -4px;
+		right: -6px;
+		background: var(--accent);
+		color: var(--accent-text);
+		font-size: 0.6rem;
+		font-weight: 700;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 8px;
+		font-family: var(--font-mono);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
 	}
 
 	.nav-badge {
@@ -313,6 +336,10 @@
 		.sidebar.collapsed .nav-section,
 		.sidebar.collapsed .sidebar-footer {
 			padding: var(--sp-2) var(--sp-3);
+		}
+
+		.sidebar.collapsed .nav-badge-dot {
+			display: none;
 		}
 
 		/* Show labels and badges even if desktop mode was collapsed */
