@@ -286,6 +286,11 @@
 								<span class="narrative-number mono">{String(i + 1).padStart(2, '0')}</span>
 								<div class="narrative-connector"></div>
 							</div>
+							<div class="narrative-status-dot-container">
+								{#if tp.paper?.readingStatus === 'unread' || tp.paper?.readingStatus === 'reading'}
+									<span class="narrative-status-dot" style="background: var({tp.paper.readingStatus === 'unread' ? '--status-unread' : '--status-active'})"></span>
+								{/if}
+							</div>
 							<div class="narrative-content">
 								<a href="/paper/{tp.paperId}" class="narrative-paper-link">
 									<h3>{tp.paper?.title}</h3>
@@ -813,7 +818,7 @@
 
 	.narrative-item {
 		display: flex;
-		gap: var(--sp-5);
+		gap: var(--sp-2);
 		animation: slideUp var(--duration-slow) var(--ease-out) both;
 	}
 
@@ -823,6 +828,7 @@
 		align-items: center;
 		width: 28px;
 		flex-shrink: 0;
+		margin-right: var(--sp-3);
 	}
 
 	.narrative-number {
@@ -851,6 +857,22 @@
 	}
 
 	.narrative-paper-link:hover h3 { color: var(--accent); }
+
+	.narrative-status-dot-container {
+		width: 12px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: flex-start;
+		justify-content: center;
+		padding-top: 7px;
+	}
+
+	.narrative-status-dot {
+		display: block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+	}
 
 	.narrative-paper-link h3 {
 		font-size: 1.1rem;

@@ -65,7 +65,7 @@
 		notes.items.filter(n => n.paperId === page.params.id)
 	);
 
-	let activeTab = $state<'summary' | 'info' | 'annotations' | 'notes' | 'threads'>('summary');
+	let activeTab = $state<'summary' | 'info' | 'notes' | 'threads'>('summary');
 	let summaryLoading = $state(false);
 	let summaryError = $state<string | null>(null);
 
@@ -156,7 +156,7 @@
 		annotationType = 'highlight';
 		annotationColor = '#d4a05340';
 		// Switch to annotations tab to show context
-		activeTab = 'annotations';
+		activeTab = 'notes';
 	}
 
 	function saveAnnotation() {
@@ -185,7 +185,7 @@
 	}
 
 	function scrollToAnnotation(ann: any) {
-		activeTab = 'annotations';
+		activeTab = 'notes';
 	}
 
 	// Editing existing annotation
@@ -289,17 +289,15 @@
 			<!-- Context panel (right) -->
 			<div class="context-panel" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
 				<div class="panel-tabs">
-					{#each ['summary', 'info', 'annotations', 'notes', 'threads'] as tab}
+					{#each ['summary', 'info', 'notes', 'threads'] as tab}
 						<button
 							class="panel-tab"
 							class:active={activeTab === tab}
 							onclick={() => activeTab = tab as typeof activeTab}
 						>
 							{tab.charAt(0).toUpperCase() + tab.slice(1)}
-							{#if tab === 'annotations' && paperAnnotations.length > 0}
-								<span class="tab-count">{paperAnnotations.length}</span>
-							{:else if tab === 'notes' && paperNotes.length > 0}
-								<span class="tab-count">{paperNotes.length}</span>
+							{#if tab === 'notes' && (paperAnnotations.length + paperNotes.length) > 0}
+								<span class="tab-count">{paperAnnotations.length + paperNotes.length}</span>
 							{/if}
 						</button>
 					{/each}
@@ -454,8 +452,8 @@
 							</div>
 						</div>
 
-					{:else if activeTab === 'annotations'}
-						<div class="annotations-tab">
+					{:else if activeTab === 'notes'}
+						<div class="notes-tab">
 							<!-- Annotation creation modal (inline) -->
 							{#if annotationModal}
 								<div class="annotation-create-card">
@@ -504,9 +502,8 @@
 								</div>
 							{/if}
 
-							{#if paperAnnotations.length === 0 && !annotationModal}
-								<p class="empty-state text-tertiary">No annotations yet. Select text in the PDF to annotate.</p>
-							{:else}
+							{#if paperAnnotations.length > 0}
+								<div class="notes-section-label mono text-tertiary">Annotations</div>
 								{#each paperAnnotations as ann}
 									<div class="annotation-card" class:editing={editingAnnotationId === ann.id}>
 										<div class="ann-header">
@@ -540,10 +537,8 @@
 									</div>
 								{/each}
 							{/if}
-						</div>
 
-					{:else if activeTab === 'notes'}
-						<div class="notes-tab">
+							<div class="notes-section-label mono text-tertiary">Notes</div>
 							<div class="notes-list">
 								{#each paperNotes as note}
 									<div class="note-bubble">
@@ -554,8 +549,8 @@
 										</div>
 									</div>
 								{/each}
-								{#if paperNotes.length === 0}
-									<p class="empty-state text-tertiary">No notes yet. Type one below.</p>
+								{#if paperNotes.length === 0 && paperAnnotations.length === 0 && !annotationModal}
+									<p class="empty-state text-tertiary">No notes or annotations yet.</p>
 								{/if}
 							</div>
 							<form class="note-input-bar" onsubmit={e => { e.preventDefault(); addNote(); }}>
@@ -575,11 +570,26 @@
 								<p class="empty-state text-tertiary">Not part of any thread.</p>
 							{:else}
 								{#each paperThreads as thread}
-									<a href="/threads/{thread.id}" class="thread-link-card">
-										<h4>{thread.title}</h4>
-										<p class="thread-link-q text-secondary">{thread.question}</p>
-										<span class="thread-link-status mono">{thread.status}</span>
-									</a>
+									<div class="thread-link-row">
+										<a href="/threads/{thread.id}" class="thread-link-card">
+											<h4>{thread.title}</h4>
+											<p class="thread-link-q text-secondary">{thread.question}</p>
+											<span class="thread-link-status mono">{thread.status}</span>
+										</a>
+										{#if paperThreads.length >= 2}
+											<button
+												class="remove-from-thread-btn"
+												title="Remove from this thread"
+												onclick={(e) => {
+													e.stopPropagation();
+													const updated = thread.papers.filter(tp => tp.paperId !== page.params.id);
+													threads.update(thread.id, { papers: updated, updatedAt: new Date().toISOString() });
+												}}
+											>
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+											</button>
+										{/if}
+									</div>
 								{/each}
 							{/if}
 						</div>
@@ -1151,19 +1161,48 @@
 	}
 
 	/* Threads tab */
-	.thread-link-card {
-		display: block;
-		padding: var(--sp-4);
-		background: var(--bg-base);
-		border-radius: var(--radius-sm);
+	.thread-link-row {
+		display: flex;
+		align-items: stretch;
+		gap: 0;
 		margin-bottom: var(--sp-3);
-		text-decoration: none;
-		color: inherit;
+		border-radius: var(--radius-sm);
+		background: var(--bg-base);
 		transition: background var(--duration-fast);
 	}
 
-	.thread-link-card:hover {
+	.thread-link-row:hover {
 		background: var(--bg-hover);
+	}
+
+	.thread-link-card {
+		display: block;
+		flex: 1;
+		padding: var(--sp-4);
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.remove-from-thread-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 var(--sp-3);
+		color: var(--text-tertiary);
+		background: none;
+		border: none;
+		border-left: 1px solid var(--border);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity var(--duration-fast), color var(--duration-fast);
+	}
+
+	.thread-link-row:hover .remove-from-thread-btn {
+		opacity: 1;
+	}
+
+	.remove-from-thread-btn:hover {
+		color: var(--status-unread);
 	}
 
 	.thread-link-card h4 {
@@ -1192,11 +1231,19 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		overflow-y: auto;
+	}
+
+	.notes-section-label {
+		font-size: 0.65rem;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		padding: var(--sp-3) 0 var(--sp-2);
 	}
 
 	.notes-list {
 		flex: 1;
-		overflow-y: auto;
+		min-height: 0;
 		display: flex;
 		flex-direction: column;
 		gap: var(--sp-2);
