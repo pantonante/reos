@@ -68,7 +68,7 @@
 		notes.items.filter(n => n.paperId === page.params.id)
 	);
 
-	let activeTab = $state<'summary' | 'info' | 'notes' | 'threads'>('summary');
+	let activeTab = $state<'summary' | 'info' | 'notes'>('summary');
 	let summaryLoading = $state(false);
 	let summaryError = $state<string | null>(null);
 
@@ -99,6 +99,45 @@
 	let noteInput = $state('');
 	let editingTags = $state(false);
 	let tagInput = $state('');
+
+	// Add-to-thread dropdown
+	let addThreadOpen = $state(false);
+	let threadSearch = $state('');
+	let addThreadRef = $state<HTMLElement | null>(null);
+	const availableThreads = $derived(
+		threads.items.filter(t => !t.papers.some(tp => tp.paperId === page.params.id))
+	);
+	const filteredThreads = $derived(
+		threadSearch
+			? availableThreads.filter(t => t.title.toLowerCase().includes(threadSearch.toLowerCase()))
+			: availableThreads
+	);
+
+	function addPaperToThread(threadId: string) {
+		const thread = threads.items.find(t => t.id === threadId);
+		if (!thread || !paper) return;
+		const updated = [...thread.papers, { paperId: paper.id, contextNote: '', order: thread.papers.length }];
+		threads.update(threadId, { papers: updated, updatedAt: new Date().toISOString() });
+		closeThreadDropdown();
+	}
+
+	function closeThreadDropdown() {
+		addThreadOpen = false;
+		threadSearch = '';
+	}
+
+	function onThreadDropdownClick(e: MouseEvent) {
+		if (addThreadRef && !addThreadRef.contains(e.target as Node)) {
+			closeThreadDropdown();
+		}
+	}
+
+	$effect(() => {
+		if (addThreadOpen) {
+			document.addEventListener('click', onThreadDropdownClick, true);
+			return () => document.removeEventListener('click', onThreadDropdownClick, true);
+		}
+	});
 
 	// Annotation creation state
 	let annotationModal = $state<{ selectedText: string; page: number } | null>(null);
@@ -292,7 +331,7 @@
 			<!-- Context panel (right) -->
 			<div class="context-panel" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
 				<div class="panel-tabs">
-					{#each ['summary', 'info', 'notes', 'threads'] as tab}
+					{#each ['summary', 'info', 'notes'] as tab}
 						<button
 							class="panel-tab"
 							class:active={activeTab === tab}
@@ -462,6 +501,49 @@
 								</div>
 							{/if}
 
+							<!-- Threads -->
+							<div class="field">
+								<label class="field-label mono">Threads</label>
+								<div class="thread-tags">
+									{#each paperThreads as thread}
+										<a href="/threads/{thread.id}" class="thread-tag">
+											<span class="thread-tag-name">{thread.title}</span>
+											<span class="thread-tag-status mono">{thread.status}</span>
+										</a>
+									{/each}
+									{#if availableThreads.length > 0}
+										<div class="add-thread-wrap" bind:this={addThreadRef}>
+											<button class="thread-tag add-thread-btn" onclick={() => { addThreadOpen = !addThreadOpen; threadSearch = ''; }}>+</button>
+											{#if addThreadOpen}
+												<div class="add-thread-dropdown">
+													<input
+														type="text"
+														class="thread-search-input"
+														placeholder="Search threads…"
+														bind:value={threadSearch}
+														autofocus
+													/>
+													<div class="add-thread-list">
+														{#each filteredThreads as t}
+															<button class="add-thread-option" onclick={() => addPaperToThread(t.id)}>
+																{t.title}
+																<span class="thread-tag-status mono">{t.status}</span>
+															</button>
+														{/each}
+														{#if filteredThreads.length === 0}
+															<span class="add-thread-empty text-tertiary">No matches</span>
+														{/if}
+													</div>
+												</div>
+											{/if}
+										</div>
+									{/if}
+									{#if paperThreads.length === 0 && availableThreads.length === 0}
+										<span class="field-value text-tertiary">No threads</span>
+									{/if}
+								</div>
+							</div>
+
 							<!-- Abstract -->
 							<div class="field">
 								<label class="field-label mono">Abstract</label>
@@ -581,35 +663,6 @@
 							</form>
 						</div>
 
-					{:else if activeTab === 'threads'}
-						<div class="threads-tab">
-							{#if paperThreads.length === 0}
-								<p class="empty-state text-tertiary">Not part of any thread.</p>
-							{:else}
-								{#each paperThreads as thread}
-									<div class="thread-link-row">
-										<a href="/threads/{thread.id}" class="thread-link-card">
-											<h4>{thread.title}</h4>
-											<p class="thread-link-q text-secondary">{thread.question}</p>
-											<span class="thread-link-status mono">{thread.status}</span>
-										</a>
-										{#if paperThreads.length >= 2}
-											<button
-												class="remove-from-thread-btn"
-												title="Remove from this thread"
-												onclick={(e) => {
-													e.stopPropagation();
-													const updated = thread.papers.filter(tp => tp.paperId !== page.params.id);
-													threads.update(thread.id, { papers: updated, updatedAt: new Date().toISOString() });
-												}}
-											>
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-											</button>
-										{/if}
-									</div>
-								{/each}
-							{/if}
-						</div>
 					{/if}
 				</div>
 			</div>
@@ -1178,69 +1231,102 @@
 	}
 
 	/* Threads tab */
-	.thread-link-row {
+	.thread-tags {
 		display: flex;
-		align-items: stretch;
-		gap: 0;
-		margin-bottom: var(--sp-3);
+		flex-wrap: wrap;
+		gap: var(--sp-2);
+	}
+
+	.thread-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--sp-2);
+		padding: var(--sp-1) var(--sp-3);
 		border-radius: var(--radius-sm);
 		background: var(--bg-base);
+		text-decoration: none;
+		color: inherit;
+		font-size: 0.82rem;
 		transition: background var(--duration-fast);
 	}
 
-	.thread-link-row:hover {
+	.thread-tag:hover {
 		background: var(--bg-hover);
 	}
 
-	.thread-link-card {
-		display: block;
-		flex: 1;
-		padding: var(--sp-4);
-		text-decoration: none;
-		color: inherit;
+	.thread-tag-status {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-tertiary);
 	}
 
-	.remove-from-thread-btn {
+	.add-thread-wrap {
+		position: relative;
+	}
+
+	.add-thread-btn {
+		color: var(--text-tertiary);
+		cursor: pointer;
+		font-size: 0.9rem;
+		padding: var(--sp-1) var(--sp-2);
+	}
+
+	.add-thread-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		margin-top: var(--sp-1);
+		min-width: 220px;
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.thread-search-input {
+		padding: var(--sp-2) var(--sp-3);
+		font-size: 0.8rem;
+		border: none;
+		border-bottom: 1px solid var(--border);
+		background: transparent;
+		color: inherit;
+		outline: none;
+	}
+
+	.add-thread-list {
+		max-height: 180px;
+		overflow-y: auto;
+	}
+
+	.add-thread-empty {
+		display: block;
+		padding: var(--sp-3);
+		font-size: 0.8rem;
+		text-align: center;
+	}
+
+	.add-thread-option {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		padding: 0 var(--sp-3);
-		color: var(--text-tertiary);
+		justify-content: space-between;
+		gap: var(--sp-2);
+		width: 100%;
+		padding: var(--sp-2) var(--sp-3);
+		font-size: 0.82rem;
+		text-align: left;
+		color: inherit;
 		background: none;
 		border: none;
-		border-left: 1px solid var(--border);
 		cursor: pointer;
-		opacity: 0;
-		transition: opacity var(--duration-fast), color var(--duration-fast);
+		transition: background var(--duration-fast);
 	}
 
-	.thread-link-row:hover .remove-from-thread-btn {
-		opacity: 1;
-	}
-
-	.remove-from-thread-btn:hover {
-		color: var(--status-unread);
-	}
-
-	.thread-link-card h4 {
-		font-size: 0.92rem;
-		margin-bottom: var(--sp-1);
-	}
-
-	.thread-link-q {
-		font-size: 0.8rem;
-		margin-bottom: var(--sp-2);
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.thread-link-status {
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--text-tertiary);
+	.add-thread-option:hover {
+		background: var(--bg-hover);
 	}
 
 	/* Notes tab */
