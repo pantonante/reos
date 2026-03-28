@@ -159,3 +159,4 @@ In 2-4 sentences: does this paper change how a practitioner should think about t
 - When referencing specific numbers from the paper, include the table/figure number for traceability
 - If the paper references code or models, note whether they're actually available
 - Keep the whole summary to roughly 800-1500 words depending on paper complexity — long enough to be useful, short enough to be worth reading over the paper itself
+- **Math formulas**: The summary is rendered with KaTeX. Use LaTeX math syntax: `$...$` for inline math and `$$...$$` for display math. For example, write `$\mathcal{O}(n \log n)$` for inline complexity, or `$$\mathcal{L} = \sum_{i=1}^{N} \ell(y_i, \hat{y}_i)$$` for a display equation. Always use proper LaTeX commands (`\mathbb`, `\mathcal`, `\sum`, `\frac`, `\in`, `\rightarrow`, Greek letters like `\alpha`, `\beta`, etc.) instead of plain-text approximations. Do not use Unicode math symbols when LaTeX equivalents exist.

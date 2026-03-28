@@ -4,6 +4,9 @@
 	import type { ReadingStatus, AnnotationType } from '$lib/types';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import { marked } from 'marked';
+	import markedKatex from 'marked-katex-extension';
+
+	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
 	const paper = $derived(papers.get(page.params.id));
 
@@ -321,7 +324,27 @@
 				<div class="panel-content">
 					{#if activeTab === 'summary'}
 						<div class="summary-tab">
-							{#if paper.summary}
+							{#if summaryLoading}
+								<div class="summary-skeleton">
+									<div class="skel-line skel-h1"></div>
+									<div class="skel-line skel-meta"></div>
+									<div class="skel-spacer"></div>
+									<div class="skel-line skel-h2"></div>
+									<div class="skel-line skel-text"></div>
+									<div class="skel-line skel-text short"></div>
+									<div class="skel-line skel-text"></div>
+									<div class="skel-spacer"></div>
+									<div class="skel-line skel-h2"></div>
+									<div class="skel-line skel-text"></div>
+									<div class="skel-line skel-text"></div>
+									<div class="skel-line skel-text short"></div>
+									<div class="skel-spacer"></div>
+									<div class="skel-line skel-h2"></div>
+									<div class="skel-line skel-text"></div>
+									<div class="skel-line skel-text short"></div>
+									<p class="text-tertiary" style="margin-top: var(--sp-4); font-size: 0.75rem; text-align: center;">Generating summary with Claude...</p>
+								</div>
+							{:else if paper.summary}
 								<div class="summary-content markdown-body">
 									{@html summaryHtml}
 								</div>
@@ -330,14 +353,8 @@
 										<span class="summary-date text-tertiary">Generated {new Date(paper.summaryDate).toLocaleDateString()}</span>
 									{/if}
 									<button class="btn-regenerate" onclick={() => generateSummary(true)} disabled={summaryLoading}>
-										{summaryLoading ? 'Regenerating...' : 'Regenerate'}
+										Regenerate
 									</button>
-								</div>
-							{:else if summaryLoading}
-								<div class="summary-loading">
-									<div class="spinner"></div>
-									<p class="text-tertiary">Generating summary with Claude...</p>
-									<p class="text-tertiary" style="font-size: 0.75rem; margin-top: var(--sp-2);">This may take a minute</p>
 								</div>
 							{:else if summaryError}
 								<div class="summary-error">
@@ -1354,25 +1371,60 @@
 		gap: var(--sp-4);
 	}
 
-	.summary-loading,
 	.summary-empty,
 	.summary-error {
 		text-align: center;
 		padding: var(--sp-8) 0;
 	}
 
-	.spinner {
-		width: 24px;
-		height: 24px;
-		border: 2px solid var(--border);
-		border-top-color: var(--accent);
-		border-radius: 50%;
-		margin: 0 auto var(--sp-3);
-		animation: spin 0.8s linear infinite;
+	/* Skeleton loading */
+	.summary-skeleton {
+		padding: var(--sp-2) 0;
 	}
 
-	@keyframes spin {
-		to { transform: rotate(360deg); }
+	.skel-line {
+		height: 12px;
+		border-radius: 4px;
+		background: linear-gradient(90deg, var(--border) 25%, var(--bg-base) 50%, var(--border) 75%);
+		background-size: 200% 100%;
+		animation: shimmer 1.5s ease-in-out infinite;
+		margin-bottom: var(--sp-2);
+	}
+
+	.skel-h1 {
+		height: 16px;
+		width: 70%;
+		margin-bottom: var(--sp-3);
+	}
+
+	.skel-meta {
+		height: 10px;
+		width: 45%;
+		margin-bottom: var(--sp-2);
+	}
+
+	.skel-h2 {
+		height: 11px;
+		width: 35%;
+		margin-bottom: var(--sp-3);
+		margin-top: var(--sp-1);
+	}
+
+	.skel-text {
+		width: 100%;
+	}
+
+	.skel-text.short {
+		width: 65%;
+	}
+
+	.skel-spacer {
+		height: var(--sp-4);
+	}
+
+	@keyframes shimmer {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
 	}
 
 	.summary-footer {
@@ -1468,6 +1520,50 @@
 		margin: 0 0 var(--sp-3);
 		padding: var(--sp-2) var(--sp-4);
 		color: var(--text-tertiary);
+	}
+
+	.markdown-body :global(table) {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 0 0 var(--sp-4);
+		font-size: 0.8rem;
+		line-height: 1.4;
+	}
+
+	.markdown-body :global(thead) {
+		border-bottom: 2px solid var(--border);
+	}
+
+	.markdown-body :global(th) {
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--text-tertiary);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		text-align: left;
+		padding: var(--sp-2) var(--sp-3);
+		white-space: nowrap;
+	}
+
+	.markdown-body :global(td) {
+		padding: var(--sp-2) var(--sp-3);
+		border-bottom: 1px solid var(--border-subtle);
+		color: var(--text-secondary);
+	}
+
+	.markdown-body :global(tbody tr:hover) {
+		background: var(--bg-base);
+	}
+
+	.markdown-body :global(td:first-child),
+	.markdown-body :global(th:first-child) {
+		padding-left: 0;
+	}
+
+	.markdown-body :global(td:last-child),
+	.markdown-body :global(th:last-child) {
+		padding-right: 0;
 	}
 
 	/* ── Tablet / iPad (≤1024px) ── */

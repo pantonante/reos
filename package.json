@@ -23,7 +23,9 @@
 	},
 	"dependencies": {
 		"better-sqlite3": "^12.8.0",
+		"katex": "^0.16.44",
 		"marked": "^17.0.5",
+		"marked-katex-extension": "^5.1.7",
 		"pdfjs-dist": "^4.10.38"
 	}
 }
