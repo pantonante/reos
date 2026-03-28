@@ -69,8 +69,8 @@ export const ui = (() => {
 	let addPaperOpen = $state(false);
 	let sidebarCollapsed = $state(
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('reos:sidebarCollapsed') === 'true'
-			: false
+			? localStorage.getItem('reos:sidebarCollapsed') !== 'false'
+			: true
 	);
 	let mobileSidebarOpen = $state(false);
 	let pdfFullscreen = $state(false);
