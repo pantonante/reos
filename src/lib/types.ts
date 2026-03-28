@@ -86,6 +86,7 @@ export interface Chat {
 	id: string;
 	title: string;
 	claudeSessionId: string | null;
+	paperId: string | null;
 	createdAt: string;
 	updatedAt: string;
 }

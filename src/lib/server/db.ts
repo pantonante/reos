@@ -93,6 +93,7 @@ function initSchema(db: Database.Database) {
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
 			claudeSessionId TEXT,
+			paperId TEXT,
 			createdAt TEXT NOT NULL,
 			updatedAt TEXT NOT NULL
 		);
@@ -120,6 +121,13 @@ function initSchema(db: Database.Database) {
 	}
 	if (!colNames.includes('links')) {
 		db.exec("ALTER TABLE papers ADD COLUMN links TEXT NOT NULL DEFAULT '[]'");
+	}
+
+	// Chat migrations
+	const chatCols = db.prepare("PRAGMA table_info(chats)").all() as { name: string }[];
+	const chatColNames = chatCols.map(c => c.name);
+	if (!chatColNames.includes('paperId')) {
+		db.exec('ALTER TABLE chats ADD COLUMN paperId TEXT');
 	}
 }
 
@@ -356,8 +364,8 @@ export const db = {
 	},
 
 	addChat(chat: Chat) {
-		getDb().prepare('INSERT INTO chats (id, title, claudeSessionId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)').run(
-			chat.id, chat.title, chat.claudeSessionId, chat.createdAt, chat.updatedAt
+		getDb().prepare('INSERT INTO chats (id, title, claudeSessionId, paperId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)').run(
+			chat.id, chat.title, chat.claudeSessionId, chat.paperId ?? null, chat.createdAt, chat.updatedAt
 		);
 	},
 

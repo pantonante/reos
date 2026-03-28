@@ -22,6 +22,7 @@
 			id: `c${Date.now()}`,
 			title: 'New chat',
 			claudeSessionId: null,
+			paperId: null,
 			createdAt: now,
 			updatedAt: now,
 		};

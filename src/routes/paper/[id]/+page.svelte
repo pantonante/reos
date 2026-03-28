@@ -79,36 +79,54 @@
 	let chatStreaming = $state(false);
 	let chatStreamingContent = $state('');
 	let paperChatId = $state<string | null>(null);
+	let chatPickerOpen = $state(false);
+	let chatPickerRef = $state<HTMLElement | null>(null);
 
-	// Find or create a chat for this paper
-	async function ensurePaperChat(): Promise<string> {
-		if (paperChatId) return paperChatId;
-		// Look for existing chat with matching title pattern
-		const existing = chats.items.find(c => c.title === `Paper: ${paper?.title?.slice(0, 40)}`);
-		if (existing) {
-			paperChatId = existing.id;
-			await loadChatMessages(existing.id);
-			return existing.id;
-		}
-		// Create new chat
+	// All chats for this paper
+	const paperChats = $derived(
+		chats.items.filter(c => c.paperId === page.params.id)
+			.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+	);
+
+	async function createPaperChat() {
 		const now = new Date().toISOString();
+		const chatNum = paperChats.length + 1;
 		const chat = {
 			id: `c${Date.now()}`,
-			title: `Paper: ${paper?.title?.slice(0, 40) ?? 'Untitled'}`,
+			title: chatNum === 1 ? 'Chat' : `Chat ${chatNum}`,
 			claudeSessionId: null,
+			paperId: page.params.id ?? null,
 			createdAt: now,
 			updatedAt: now,
 		};
 		await chats.add(chat);
-		paperChatId = chat.id;
-		return chat.id;
+		await selectPaperChat(chat.id);
+		chatPickerOpen = false;
 	}
 
-	async function loadChatMessages(chatId: string) {
+	async function selectPaperChat(chatId: string) {
+		paperChatId = chatId;
+		chatMessages = [];
+		chatStreaming = false;
+		chatStreamingContent = '';
+		chatPickerOpen = false;
 		try {
 			const res = await fetch(`/api/chats/${chatId}/messages`);
 			if (res.ok) chatMessages = await res.json();
 		} catch { /* offline */ }
+	}
+
+	async function deletePaperChat(chatId: string) {
+		await chats.remove(chatId);
+		if (paperChatId === chatId) {
+			const remaining = paperChats.filter(c => c.id !== chatId);
+			if (remaining.length > 0) {
+				await selectPaperChat(remaining[0].id);
+			} else {
+				paperChatId = null;
+				chatMessages = [];
+			}
+		}
 	}
 
 	// Reset chat state when paper changes
@@ -124,8 +142,26 @@
 		}
 	});
 
+	// Close chat picker on outside click
+	function onChatPickerClick(e: MouseEvent) {
+		if (chatPickerRef && !chatPickerRef.contains(e.target as Node)) {
+			chatPickerOpen = false;
+		}
+	}
+
+	$effect(() => {
+		if (chatPickerOpen) {
+			document.addEventListener('click', onChatPickerClick, true);
+			return () => document.removeEventListener('click', onChatPickerClick, true);
+		}
+	});
+
 	async function sendChatMessage(text: string) {
-		const chatId = await ensurePaperChat();
+		// Auto-create a chat if none is selected
+		if (!paperChatId) {
+			await createPaperChat();
+		}
+		const chatId = paperChatId!;
 		const isFirstMessage = chatMessages.length === 0;
 
 		const userMsg: ChatMessage = {
@@ -482,17 +518,14 @@
 							class:active={activeTab === tab}
 							onclick={() => {
 								activeTab = tab as typeof activeTab;
-								if (tab === 'chat' && chatMessages.length === 0 && !paperChatId) {
-									ensurePaperChat();
+								if (tab === 'chat' && !paperChatId && paperChats.length > 0) {
+									selectPaperChat(paperChats[0].id);
 								}
 							}}
 						>
 							{tab.charAt(0).toUpperCase() + tab.slice(1)}
 							{#if tab === 'notes' && (paperAnnotations.length + paperNotes.length) > 0}
 								<span class="tab-count">{paperAnnotations.length + paperNotes.length}</span>
-							{/if}
-							{#if tab === 'chat' && chatMessages.length > 0}
-								<span class="tab-count">{chatMessages.length}</span>
 							{/if}
 						</button>
 					{/each}
@@ -734,7 +767,57 @@
 
 					{:else if activeTab === 'chat'}
 						<div class="chat-tab">
-							<ChatMessages messages={chatMessages} isStreaming={chatStreaming} streamingContent={chatStreamingContent} />
+							<div class="chat-header">
+								<div class="chat-picker" bind:this={chatPickerRef}>
+									<button class="chat-picker-btn" onclick={() => chatPickerOpen = !chatPickerOpen} title="Switch chat">
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+										</svg>
+										<span class="chat-picker-label">
+											{#if paperChatId}
+												{chats.get(paperChatId)?.title ?? 'Chat'}
+											{:else}
+												Select chat
+											{/if}
+										</span>
+										<svg class="chat-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="6 9 12 15 18 9"/>
+										</svg>
+									</button>
+									{#if chatPickerOpen}
+										<div class="chat-picker-dropdown">
+											<button class="chat-picker-item new-chat" onclick={() => createPaperChat()}>
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+													<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+												</svg>
+												New chat
+											</button>
+											{#each paperChats as pc (pc.id)}
+												<div class="chat-picker-item" class:active={pc.id === paperChatId}>
+													<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
+														{pc.title}
+													</button>
+													<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
+														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+															<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+														</svg>
+													</button>
+												</div>
+											{/each}
+											{#if paperChats.length === 0}
+												<p class="chat-picker-empty">No chats yet</p>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+							{#if paperChatId}
+								<ChatMessages messages={chatMessages} isStreaming={chatStreaming} streamingContent={chatStreamingContent} />
+							{:else}
+								<div class="chat-empty">
+									<p>Start a new chat about this paper</p>
+								</div>
+							{/if}
 							<ChatInput onsend={sendChatMessage} disabled={chatStreaming} />
 						</div>
 
@@ -1556,6 +1639,147 @@
 		overflow: hidden;
 		margin: calc(-1 * var(--sp-5));
 		margin-top: 0;
+	}
+
+	.chat-header {
+		display: flex;
+		align-items: center;
+		padding: var(--sp-2) var(--sp-3);
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.chat-picker {
+		position: relative;
+		flex: 1;
+	}
+
+	.chat-picker-btn {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		padding: var(--sp-1) var(--sp-2);
+		border-radius: var(--radius-sm);
+		color: var(--text-secondary);
+		font-size: 0.82rem;
+		font-family: var(--font-body);
+		transition: all var(--duration-fast);
+		cursor: pointer;
+		width: 100%;
+	}
+
+	.chat-picker-btn:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.chat-picker-label {
+		flex: 1;
+		text-align: left;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.chat-picker-chevron {
+		flex-shrink: 0;
+		opacity: 0.5;
+	}
+
+	.chat-picker-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		margin-top: var(--sp-1);
+		background: var(--bg-overlay);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-md);
+		z-index: 20;
+		max-height: 240px;
+		overflow-y: auto;
+		padding: var(--sp-1);
+	}
+
+	.chat-picker-item {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		width: 100%;
+		border-radius: var(--radius-sm);
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+		transition: all var(--duration-fast);
+	}
+
+	.chat-picker-item:hover {
+		background: var(--bg-hover);
+	}
+
+	.chat-picker-item.active {
+		background: var(--accent-muted);
+		color: var(--accent);
+	}
+
+	.chat-picker-item.new-chat {
+		padding: var(--sp-2) var(--sp-3);
+		color: var(--accent);
+		font-weight: 500;
+		cursor: pointer;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: var(--sp-1);
+		border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+	}
+
+	.chat-picker-select {
+		flex: 1;
+		text-align: left;
+		padding: var(--sp-2) var(--sp-3);
+		font-size: 0.82rem;
+		font-family: var(--font-body);
+		color: inherit;
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.chat-picker-delete {
+		flex-shrink: 0;
+		display: none;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border-radius: var(--radius-sm);
+		color: var(--text-tertiary);
+		margin-right: var(--sp-1);
+	}
+
+	.chat-picker-item:hover .chat-picker-delete {
+		display: flex;
+	}
+
+	.chat-picker-delete:hover {
+		color: var(--status-unread);
+		background: var(--bg-surface);
+	}
+
+	.chat-picker-empty {
+		text-align: center;
+		color: var(--text-tertiary);
+		font-size: 0.8rem;
+		padding: var(--sp-3);
+	}
+
+	.chat-empty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-tertiary);
+		font-size: 0.9rem;
 	}
 
 	.notes-tab {
