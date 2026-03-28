@@ -216,7 +216,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* Tablet — iPad portrait & landscape (≤1024px) */
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
 	:root {
 		--sidebar-width: 0px;
 		--sidebar-collapsed: 0px;

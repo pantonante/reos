@@ -407,7 +407,7 @@
 	}
 
 	/* ── Tablet (≤1024px) ── */
-	@media (max-width: 1024px) {
+	@media (max-width: 768px) {
 		.header-left h1 {
 			font-size: 1.8rem;
 		}

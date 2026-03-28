@@ -434,7 +434,7 @@
 		color: var(--text-primary);
 	}
 
-	@media (max-width: 1024px) {
+	@media (max-width: 768px) {
 		.tab {
 			padding: var(--sp-3) var(--sp-4);
 			padding-right: var(--sp-3);

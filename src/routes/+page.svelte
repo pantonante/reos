@@ -105,7 +105,7 @@
 		gap: var(--sp-4);
 	}
 
-	@media (max-width: 1024px) {
+	@media (max-width: 768px) {
 		.page-header {
 			margin-bottom: var(--sp-6);
 		}

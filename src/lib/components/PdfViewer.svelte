@@ -561,7 +561,7 @@
 	}
 
 	/* ── Tablet & Mobile ── */
-	@media (max-width: 1024px) {
+	@media (max-width: 768px) {
 		.desktop-only {
 			display: none;
 		}
