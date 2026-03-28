@@ -35,9 +35,7 @@
 				<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
 			</svg>
 		</button>
-		{#if !ui.sidebarCollapsed}
-			<span class="logo"><span class="logo-mark">Re:</span><span class="logo-text">OS</span></span>
-		{/if}
+		<span class="logo"><span class="logo-mark">Re:</span><span class="logo-text">OS</span></span>
 	</div>
 
 	<div class="nav-section">
@@ -78,15 +76,13 @@
 							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
 						</svg>
 					{/if}
-					{#if ui.sidebarCollapsed && item.badge > 0}
+					{#if item.badge > 0}
 						<span class="nav-badge-dot">{item.badge}</span>
 					{/if}
 				</span>
-				{#if !ui.sidebarCollapsed}
-					<span class="nav-label">{item.label}</span>
-					{#if 'badge' in item && item.badge > 0}
-						<span class="nav-badge">{item.badge}</span>
-					{/if}
+				<span class="nav-label">{item.label}</span>
+				{#if 'badge' in item && item.badge > 0}
+					<span class="nav-badge">{item.badge}</span>
 				{/if}
 			</a>
 		{/each}
@@ -98,10 +94,8 @@
 				<circle cx="11" cy="11" r="7"/>
 				<line x1="16.5" y1="16.5" x2="21" y2="21"/>
 			</svg>
-			{#if !ui.sidebarCollapsed}
-				<span class="search-label">Search…</span>
-				<kbd class="search-kbd">⌘K</kbd>
-			{/if}
+			<span class="search-label">Search…</span>
+			<kbd class="search-kbd">⌘K</kbd>
 		</button>
 	</div>
 </nav>
@@ -213,7 +207,7 @@
 		padding: 0 4px;
 		border-radius: 8px;
 		font-family: var(--font-mono);
-		display: flex;
+		display: none;
 		align-items: center;
 		justify-content: center;
 		line-height: 1;
@@ -274,6 +268,18 @@
 		border-radius: 3px;
 		border: 1px solid var(--border);
 		line-height: 1.4;
+	}
+
+	.collapsed .logo,
+	.collapsed .nav-label,
+	.collapsed .nav-badge,
+	.collapsed .search-label,
+	.collapsed .search-kbd {
+		display: none;
+	}
+
+	.collapsed .nav-badge-dot {
+		display: flex;
 	}
 
 	.collapsed .sidebar-header {
