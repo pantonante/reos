@@ -88,10 +88,21 @@ export const ui = (() => {
 			? JSON.parse(localStorage.getItem('reos:openPapers') || '[]')
 			: []
 	);
+	let openThreadIds = $state<string[]>(
+		typeof localStorage !== 'undefined'
+			? JSON.parse(localStorage.getItem('reos:openThreads') || '[]')
+			: []
+	);
 
 	function persistOpenPapers() {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem('reos:openPapers', JSON.stringify(openPaperIds));
+		}
+	}
+
+	function persistOpenThreads() {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('reos:openThreads', JSON.stringify(openThreadIds));
 		}
 	}
 
@@ -152,6 +163,31 @@ export const ui = (() => {
 			openPaperIds = [];
 			activePaperId = null;
 			persistOpenPapers();
+		},
+		get openThreadIds() { return openThreadIds; },
+		openThread(id: string) {
+			if (!openThreadIds.includes(id)) {
+				openThreadIds = [...openThreadIds, id];
+				persistOpenThreads();
+			}
+			activeThreadId = id;
+		},
+		closeThread(id: string): string | null {
+			const idx = openThreadIds.indexOf(id);
+			if (idx === -1) return null;
+			openThreadIds = openThreadIds.filter(t => t !== id);
+			persistOpenThreads();
+			if (activeThreadId === id) {
+				const next = openThreadIds[Math.min(idx, openThreadIds.length - 1)] ?? null;
+				activeThreadId = next;
+				return next;
+			}
+			return activeThreadId;
+		},
+		closeAllThreads() {
+			openThreadIds = [];
+			activeThreadId = null;
+			persistOpenThreads();
 		},
 	};
 })();

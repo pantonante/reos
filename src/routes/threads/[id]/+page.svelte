@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { threads, papers, annotations } from '$lib/stores.svelte';
+	import { untrack } from 'svelte';
+	import { threads, papers, annotations, ui } from '$lib/stores.svelte';
 	import AddPaperToThreadModal from '$lib/components/AddPaperToThreadModal.svelte';
 	import type { ThreadStatus, ReadingStatus } from '$lib/types';
+
+	// Register this thread as an open tab
+	$effect(() => {
+		const id = page.params.id;
+		if (id) untrack(() => ui.openThread(id));
+	});
 
 	let viewMode = $state<'narrative' | 'status' | 'matrix' | 'timeline' | 'graph'>('narrative');
 	let showAddPaper = $state(false);

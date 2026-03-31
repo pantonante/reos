@@ -11,8 +11,9 @@
 
 	let { children } = $props();
 
-	const showTabs = $derived(ui.openPaperIds.length > 0);
+	const showTabs = $derived(ui.openPaperIds.length > 0 || ui.openThreadIds.length > 0);
 	const isPaperRoute = $derived(page.url.pathname.startsWith('/paper/'));
+	const isThreadRoute = $derived(page.url.pathname.startsWith('/threads/') && page.params.id);
 	const isFullscreen = $derived(ui.pdfFullscreen && isPaperRoute);
 
 	onMount(() => {
