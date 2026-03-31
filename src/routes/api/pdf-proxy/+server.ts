@@ -5,8 +5,24 @@ import { PDF_DIR } from '$lib/server/pdf-storage';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const arxivId = url.searchParams.get('id');
-	if (!arxivId) {
-		return new Response('Missing id parameter', { status: 400 });
+	const paperId = url.searchParams.get('paperId');
+	if (!arxivId && !paperId) {
+		return new Response('Missing id or paperId parameter', { status: 400 });
+	}
+
+	// For uploaded PDFs, serve by paperId
+	if (paperId) {
+		const filePath = path.join(PDF_DIR, `${paperId}.pdf`);
+		if (fs.existsSync(filePath)) {
+			const buffer = fs.readFileSync(filePath);
+			return new Response(buffer, {
+				headers: {
+					'Content-Type': 'application/pdf',
+					'Cache-Control': 'public, max-age=86400',
+				},
+			});
+		}
+		return new Response('PDF not found', { status: 404 });
 	}
 
 	const filePath = path.join(PDF_DIR, `${arxivId}.pdf`);

@@ -462,15 +462,17 @@
 			<!-- PDF panel (left) -->
 			<div class="pdf-panel">
 				<div class="pdf-header-bar">
-					<span class="mono">{paper.arxivId}</span>
+					<span class="mono">{paper.arxivId || 'Uploaded PDF'}</span>
 					<div class="pdf-header-actions">
 						{#if page.data.isLocalhost}
-						<button onclick={() => fetch(`/api/pdf-proxy/reveal?id=${paper.arxivId}`)} class="pdf-action mono">
+						<button onclick={() => fetch(`/api/pdf-proxy/reveal?id=${paper.arxivId || paper.id}`)} class="pdf-action mono">
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
 							<span class="action-label">Reveal in Finder</span>
 						</button>
 						{/if}
+						{#if paper.arxivUrl}
 						<a href={paper.arxivUrl} target="_blank" rel="noopener" class="pdf-action mono">arxiv ↗</a>
+						{/if}
 					</div>
 				</div>
 				{#each ui.openPaperIds as openId (openId)}
@@ -479,6 +481,7 @@
 						<div class="pdf-slot" class:active={openId === page.params.id}>
 							<PdfViewer
 								arxivId={openPaper.arxivId}
+								paperId={openPaper.id}
 								annotations={annotations.items.filter(a => a.paperId === openId)}
 								onCreateAnnotation={openAnnotationModal}
 								onClickAnnotation={scrollToAnnotation}
@@ -668,10 +671,12 @@
 								</div>
 							</div>
 
+							{#if paper.arxivId}
 							<div class="field">
 								<label class="field-label mono">Arxiv</label>
 								<a href={paper.arxivUrl} target="_blank" rel="noopener" class="field-link mono">{paper.arxivId} ↗</a>
 							</div>
+							{/if}
 
 							<!-- Links -->
 							<div class="field">

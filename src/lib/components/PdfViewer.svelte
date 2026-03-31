@@ -5,6 +5,7 @@
 
 	interface Props {
 		arxivId: string;
+		paperId?: string;
 		annotations: Annotation[];
 		onCreateAnnotation: (selectedText: string, page: number) => void;
 		onClickAnnotation?: (annotation: Annotation) => void;
@@ -12,7 +13,7 @@
 		isFullscreen?: boolean;
 	}
 
-	let { arxivId, annotations, onCreateAnnotation, onClickAnnotation, onToggleFullscreen, isFullscreen = false }: Props = $props();
+	let { arxivId, paperId, annotations, onCreateAnnotation, onClickAnnotation, onToggleFullscreen, isFullscreen = false }: Props = $props();
 
 	let container: HTMLDivElement;
 	let pagesContainer: HTMLDivElement;
@@ -49,7 +50,10 @@
 			).toString();
 			pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-			const loadingTask = pdfjsLib.getDocument(`/api/pdf-proxy?id=${encodeURIComponent(arxivId)}`);
+			const pdfUrl = arxivId
+				? `/api/pdf-proxy?id=${encodeURIComponent(arxivId)}`
+				: `/api/pdf-proxy?paperId=${encodeURIComponent(paperId!)}`;
+			const loadingTask = pdfjsLib.getDocument(pdfUrl);
 			pdfDoc = await loadingTask.promise;
 			numPages = pdfDoc.numPages;
 			loading = false;
