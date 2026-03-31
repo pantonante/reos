@@ -76,6 +76,11 @@ export const ui = (() => {
 	);
 	let mobileSidebarOpen = $state(false);
 	let pdfFullscreen = $state(false);
+	let contextPanelOpen = $state(
+		typeof localStorage !== 'undefined'
+			? localStorage.getItem('reos:contextPanelOpen') !== 'false'
+			: true
+	);
 	let activePaperId = $state<string | null>(null);
 	let activeThreadId = $state<string | null>(null);
 	let openPaperIds = $state<string[]>(
@@ -106,6 +111,13 @@ export const ui = (() => {
 		set mobileSidebarOpen(v) { mobileSidebarOpen = v; },
 		get pdfFullscreen() { return pdfFullscreen; },
 		set pdfFullscreen(v) { pdfFullscreen = v; },
+		get contextPanelOpen() { return contextPanelOpen; },
+		set contextPanelOpen(v) {
+			contextPanelOpen = v;
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('reos:contextPanelOpen', String(v));
+			}
+		},
 		get activePaperId() { return activePaperId; },
 		set activePaperId(v) { activePaperId = v; },
 		get activeThreadId() { return activeThreadId; },

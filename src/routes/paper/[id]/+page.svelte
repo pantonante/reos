@@ -12,9 +12,6 @@
 
 	const paper = $derived(papers.get(page.params.id));
 
-	// Mobile context panel state
-	let mobileContextOpen = $state(false);
-
 	// Resizable sidebar
 	let sidebarWidth = $state(380);
 	let isResizing = $state(false);
@@ -45,7 +42,7 @@
 
 	function toggleFullscreen() {
 		ui.pdfFullscreen = !ui.pdfFullscreen;
-		if (ui.pdfFullscreen) mobileContextOpen = false;
+		if (ui.pdfFullscreen) ui.contextPanelOpen = false;
 	}
 
 	// Register this paper as open in the tab bar
@@ -458,7 +455,7 @@
 	</div>
 {:else}
 	<div class="paper-detail" class:fullscreen={ui.pdfFullscreen}>
-		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} style="--sidebar-w: {sidebarWidth}px">
+		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} class:panel-collapsed={!ui.contextPanelOpen} style="--sidebar-w: {sidebarWidth}px">
 			<!-- PDF panel (left) -->
 			<div class="pdf-panel">
 				<div class="pdf-header-bar">
@@ -474,6 +471,17 @@
 						<a href={paper.arxivUrl} target="_blank" rel="noopener" class="pdf-action mono">arxiv ↗</a>
 						{/if}
 					</div>
+					<button
+						class="context-toggle"
+						class:active={ui.contextPanelOpen}
+						onclick={() => ui.contextPanelOpen = !ui.contextPanelOpen}
+						aria-label={ui.contextPanelOpen ? 'Hide details' : 'Show details'}
+						title={ui.contextPanelOpen ? 'Hide details' : 'Show details'}
+					>
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>
+						</svg>
+					</button>
 				</div>
 				{#each ui.openPaperIds as openId (openId)}
 					{@const openPaper = papers.get(openId)}
@@ -493,27 +501,11 @@
 				{/each}
 			</div>
 
-			<!-- Mobile context toggle (floating button) -->
-			<button
-				class="mobile-context-toggle"
-				class:active={mobileContextOpen}
-				onclick={() => mobileContextOpen = !mobileContextOpen}
-				aria-label="Toggle paper details"
-			>
-				{#if mobileContextOpen}
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-				{:else}
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-					</svg>
-				{/if}
-			</button>
-
 			<!-- Resize handle -->
 			<div class="resize-handle" onpointerdown={onResizeStart} role="separator" aria-label="Resize sidebar"></div>
 
 			<!-- Context panel (right) -->
-			<div class="context-panel" class:mobile-open={mobileContextOpen} class:panel-fullscreen={panelFullscreen}>
+			<div class="context-panel" class:panel-open={ui.contextPanelOpen} class:panel-fullscreen={panelFullscreen}>
 				<div class="panel-tabs">
 					{#each ['summary', 'info', 'notes', 'chat'] as tab}
 						<button
@@ -1007,9 +999,39 @@
 		opacity: 1;
 	}
 
-	/* Mobile context toggle — hidden on desktop */
-	.mobile-context-toggle {
+	/* Panel collapsed state */
+	.reader-layout.panel-collapsed {
+		grid-template-columns: 1fr 0px 0px;
+	}
+
+	.reader-layout.panel-collapsed .resize-handle {
 		display: none;
+	}
+
+	.reader-layout.panel-collapsed .context-panel {
+		border-left: none;
+		overflow: hidden;
+	}
+
+	/* Context toggle button in header bar */
+	.context-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: var(--sp-1);
+		color: var(--text-tertiary);
+		border-radius: var(--radius-sm);
+		transition: color var(--duration-fast), background var(--duration-fast);
+		flex-shrink: 0;
+	}
+
+	.context-toggle:hover {
+		color: var(--text-primary);
+		background: var(--bg-hover);
+	}
+
+	.context-toggle.active {
+		color: var(--accent);
 	}
 
 	/* PDF panel */
@@ -2109,11 +2131,16 @@
 		padding-right: 0;
 	}
 
-	/* ── Tablet / iPad (≤1024px) ── */
+	/* ── Tablet / iPad (≤768px) ── */
 	@media (max-width: 768px) {
 		.reader-layout {
 			grid-template-columns: 1fr;
 			position: relative;
+		}
+
+		/* On mobile, ignore panel-collapsed grid override — use overlay instead */
+		.reader-layout.panel-collapsed {
+			grid-template-columns: 1fr;
 		}
 
 		.resize-handle {
@@ -2124,7 +2151,7 @@
 			min-height: 0;
 		}
 
-		/* Context panel as fullscreen overlay on iPad */
+		/* Context panel as slide-in overlay on mobile */
 		.context-panel {
 			position: absolute;
 			top: 0;
@@ -2140,36 +2167,8 @@
 			z-index: 20;
 		}
 
-		.context-panel.mobile-open {
+		.context-panel.panel-open {
 			transform: translateX(0);
-		}
-
-		/* Floating toggle button */
-		.mobile-context-toggle {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			position: absolute;
-			bottom: var(--sp-4);
-			right: var(--sp-4);
-			width: 48px;
-			height: 48px;
-			border-radius: 50%;
-			background: var(--accent);
-			color: var(--accent-text);
-			box-shadow: var(--shadow-lg);
-			z-index: 19;
-			transition: all var(--duration-fast);
-		}
-
-		.mobile-context-toggle.active {
-			background: var(--bg-surface);
-			color: var(--text-primary);
-			z-index: 21;
-		}
-
-		.mobile-context-toggle:hover {
-			transform: scale(1.05);
 		}
 
 		/* Panel tabs: scrollable on tablet */
@@ -2196,8 +2195,7 @@
 
 	/* ── Fullscreen override ── */
 	.reader-layout.fullscreen .context-panel,
-	.reader-layout.fullscreen .resize-handle,
-	.reader-layout.fullscreen .mobile-context-toggle {
+	.reader-layout.fullscreen .resize-handle {
 		display: none;
 	}
 
@@ -2207,12 +2205,6 @@
 
 	/* ── Phone (≤480px) ── */
 	@media (max-width: 480px) {
-		.mobile-context-toggle.active {
-			right: var(--sp-4);
-			bottom: var(--sp-4);
-			z-index: 21;
-		}
-
 		.panel-content {
 			padding: var(--sp-3);
 		}
