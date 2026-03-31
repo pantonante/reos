@@ -82,11 +82,13 @@
 							streamingContent += event.text;
 						}
 						if (event.type === 'done') {
+							// Use streamed content, or fall back to full result text
+							const content = streamingContent || event.fullText || '';
 							const assistantMsg: ChatMessage = {
 								id: `m${Date.now() + 1}`,
 								chatId,
 								role: 'assistant',
-								content: streamingContent,
+								content,
 								createdAt: new Date().toISOString(),
 							};
 							messages = [...messages, assistantMsg];

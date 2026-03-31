@@ -29,7 +29,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 	// Build claude CLI args
 	const args = ['-p', '--output-format', 'stream-json', '--verbose', '--allowedTools', 'Read,Glob,Grep,WebFetch,WebSearch'];
 	if (chat.claudeSessionId) {
-		args.push('--session-id', chat.claudeSessionId);
+		args.push('--resume', chat.claudeSessionId);
 	}
 
 	const child = spawn('claude', args, {
@@ -42,7 +42,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 	if (paperId) {
 		const paper = db.getPaper(paperId);
 		if (paper) {
-			const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId}.pdf`);
+			const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
 			prompt = `Read this pdf paper at "${pdfFullPath}". Title: "${paper.title}".\n\n${message}`;
 		}
 	}
@@ -55,6 +55,11 @@ export const POST: RequestHandler = async ({ request, params }) => {
 			let fullText = '';
 			let sessionId = chat.claudeSessionId;
 			let buffer = '';
+			let stderrOutput = '';
+
+			child.stderr.on('data', (chunk: Buffer) => {
+				stderrOutput += chunk.toString();
+			});
 
 			child.stdout.on('data', (chunk: Buffer) => {
 				buffer += chunk.toString();
@@ -68,7 +73,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 						const event = JSON.parse(line);
 						if (event.type === 'assistant' && event.message?.content) {
 							for (const block of event.message.content) {
-								if (block.type === 'text') {
+								if (block.type === 'text' && block.text) {
 									fullText += block.text;
 									controller.enqueue(
 										new TextEncoder().encode(
@@ -77,6 +82,15 @@ export const POST: RequestHandler = async ({ request, params }) => {
 									);
 								}
 							}
+						}
+						// Handle streaming text deltas
+						if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+							fullText += event.delta.text;
+							controller.enqueue(
+								new TextEncoder().encode(
+									`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`
+								)
+							);
 						}
 						if (event.type === 'result') {
 							sessionId = event.session_id;
@@ -91,7 +105,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 				}
 			});
 
-			child.on('close', () => {
+			child.on('close', (code) => {
 				// Process any remaining buffer
 				if (buffer.trim()) {
 					try {
@@ -101,6 +115,15 @@ export const POST: RequestHandler = async ({ request, params }) => {
 							if (event.result) fullText = event.result;
 						}
 					} catch { /* ignore */ }
+				}
+
+				// If CLI exited with error and no output, send error to client
+				if (code !== 0 && !fullText && stderrOutput) {
+					controller.enqueue(
+						new TextEncoder().encode(
+							`data: ${JSON.stringify({ type: 'error', error: stderrOutput.trim() })}\n\n`
+						)
+					);
 				}
 
 				// Save assistant message
@@ -123,7 +146,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 				}
 
 				controller.enqueue(
-					new TextEncoder().encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
+					new TextEncoder().encode(`data: ${JSON.stringify({ type: 'done', fullText })}\n\n`)
 				);
 				controller.close();
 			});
