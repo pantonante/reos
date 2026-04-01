@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { threads, papers } from '$lib/stores.svelte';
+	import { goto } from '$app/navigation';
+	import { threads } from '$lib/stores.svelte';
 	import NewThreadModal from '$lib/components/NewThreadModal.svelte';
-	import type { ThreadStatus } from '$lib/types';
+	import type { Thread, ThreadStatus } from '$lib/types';
+	import { tick } from 'svelte';
 
 	let viewMode = $state<'kanban' | 'list'>('kanban');
 	let showNewThread = $state(false);
-	let draggedThreadId = $state<string | null>(null);
-	let dropTargetStatus = $state<ThreadStatus | null>(null);
 
 	const columns: { status: ThreadStatus; label: string; color: string }[] = [
 		{ status: 'active', label: 'Active', color: 'var(--status-active)' },
@@ -14,7 +14,7 @@
 		{ status: 'concluded', label: 'Concluded', color: 'var(--status-concluded)' },
 	];
 
-	function threadsByStatus(status: ThreadStatus) {
+	function threadsByStatus(status: ThreadStatus): Thread[] {
 		return threads.items.filter(t => t.status === status);
 	}
 
@@ -23,44 +23,198 @@
 		return thread?.papers.length ?? 0;
 	}
 
-	function handleDragStart(e: DragEvent, threadId: string) {
-		draggedThreadId = threadId;
-		if (e.dataTransfer) {
-			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/plain', threadId);
+	// ── Drag & drop ──
+	// Layout: during a drag we build a virtual layout that shows where the
+	// dragged card *would* land. This is a pure snapshot — not reactive state
+	// that feeds back into effects.
+
+	const DRAG_THRESHOLD = 6;
+
+	let dragId = $state<string | null>(null);
+	let ghostPos = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+	let dragOffset = { x: 0, y: 0 };
+
+	// The virtual layout override: column -> ordered ids (including dragged card)
+	// null when not dragging. Set imperatively, never read inside $effect/$derived.
+	let layoutOverride = $state<Record<ThreadStatus, string[]> | null>(null);
+
+	// Pending pointer down — not yet a drag
+	let pending: { id: string; x: number; y: number; el: HTMLElement } | null = null;
+
+	// Element registry for FLIP
+	let cardEls = new Map<string, HTMLElement>();
+	let prevRects = new Map<string, DOMRect>();
+
+	function cardAction(node: HTMLElement, id: string) {
+		cardEls.set(id, node);
+		return {
+			update(newId: string) { cardEls.delete(id); id = newId; cardEls.set(id, node); },
+			destroy() { cardEls.delete(id); },
+		};
+	}
+
+	function snapshot() {
+		prevRects.clear();
+		for (const [id, el] of cardEls) prevRects.set(id, el.getBoundingClientRect());
+	}
+
+	async function flip() {
+		await tick();
+		for (const [id, el] of cardEls) {
+			const old = prevRects.get(id);
+			if (!old) continue;
+			const cur = el.getBoundingClientRect();
+			const dx = old.left - cur.left;
+			const dy = old.top - cur.top;
+			if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+			el.style.transition = 'none';
+			el.style.transform = `translate(${dx}px, ${dy}px)`;
+			el.offsetHeight; // reflow
+			el.style.transition = 'transform 250ms cubic-bezier(0.25, 0.8, 0.25, 1)';
+			el.style.transform = '';
 		}
 	}
 
-	function handleDragEnd() {
-		draggedThreadId = null;
-		dropTargetStatus = null;
+	// What to render for each column
+	function displayThreads(status: ThreadStatus): Thread[] {
+		if (layoutOverride) {
+			return (layoutOverride[status] ?? [])
+				.map(id => threads.get(id))
+				.filter((t): t is Thread => t != null);
+		}
+		return threadsByStatus(status);
 	}
 
-	function handleDragOver(e: DragEvent, status: ThreadStatus) {
+	// Build initial layout snapshot from current data
+	function buildLayout(): Record<ThreadStatus, string[]> {
+		const out = {} as Record<ThreadStatus, string[]>;
+		for (const col of columns) {
+			out[col.status] = threadsByStatus(col.status).map(t => t.id);
+		}
+		return out;
+	}
+
+	function onPointerDown(e: PointerEvent, threadId: string) {
+		if (e.button !== 0) return;
 		e.preventDefault();
-		if (e.dataTransfer) {
-			e.dataTransfer.dropEffect = 'move';
-		}
-		dropTargetStatus = status;
+		const el = e.currentTarget as HTMLElement;
+		const rect = el.getBoundingClientRect();
+		dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+		pending = { id: threadId, x: e.clientX, y: e.clientY, el };
 	}
 
-	function handleDragLeave(e: DragEvent, colEl: HTMLElement) {
-		if (!colEl.contains(e.relatedTarget as Node)) {
-			dropTargetStatus = null;
+	function onPointerMove(e: PointerEvent) {
+		if (pending && !dragId) {
+			const dx = e.clientX - pending.x;
+			const dy = e.clientY - pending.y;
+			if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+
+			// Activate drag
+			const rect = pending.el.getBoundingClientRect();
+			dragId = pending.id;
+			ghostPos = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+			layoutOverride = buildLayout();
+			snapshot();
+			pending = null;
+		}
+
+		if (!dragId || !ghostPos || !layoutOverride) return;
+
+		ghostPos = { ...ghostPos, x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y };
+
+		// Find target column
+		const cx = e.clientX;
+		const cy = e.clientY;
+		let targetCol: ThreadStatus | null = null;
+		let bestDist = Infinity;
+
+		for (const col of columns) {
+			const el = document.querySelector(`[data-col="${col.status}"]`) as HTMLElement | null;
+			if (!el) continue;
+			const r = el.getBoundingClientRect();
+			if (cx >= r.left - 30 && cx <= r.right + 30) {
+				const d = Math.abs(cx - (r.left + r.width / 2));
+				if (d < bestDist) { bestDist = d; targetCol = col.status; }
+			}
+		}
+		if (!targetCol) {
+			// fallback: nearest column
+			for (const col of columns) {
+				const el = document.querySelector(`[data-col="${col.status}"]`) as HTMLElement | null;
+				if (!el) continue;
+				const r = el.getBoundingClientRect();
+				const d = Math.abs(cx - (r.left + r.width / 2));
+				if (d < bestDist) { bestDist = d; targetCol = col.status; }
+			}
+		}
+		if (!targetCol) return;
+
+		// Find insert index
+		const others = (layoutOverride[targetCol] ?? []).filter(id => id !== dragId);
+		let insertIdx = others.length;
+		for (let i = 0; i < others.length; i++) {
+			const el = cardEls.get(others[i]);
+			if (!el) continue;
+			const r = el.getBoundingClientRect();
+			if (cy < r.top + r.height / 2) { insertIdx = i; break; }
+		}
+
+		// Check if layout actually changed
+		const newLayout = {} as Record<ThreadStatus, string[]>;
+		for (const col of columns) {
+			newLayout[col.status] = (layoutOverride[col.status] ?? []).filter(id => id !== dragId);
+		}
+		newLayout[targetCol].splice(insertIdx, 0, dragId);
+
+		const changed = columns.some(col =>
+			newLayout[col.status].length !== (layoutOverride![col.status] ?? []).length ||
+			newLayout[col.status].some((id, i) => id !== layoutOverride![col.status][i])
+		);
+
+		if (changed) {
+			snapshot();
+			layoutOverride = newLayout;
+			flip();
 		}
 	}
 
-	function handleDrop(e: DragEvent, status: ThreadStatus) {
-		e.preventDefault();
-		dropTargetStatus = null;
-		if (!draggedThreadId) return;
-		const thread = threads.get(draggedThreadId);
-		if (thread && thread.status !== status) {
-			threads.update(thread.id, { status, updatedAt: new Date().toISOString() });
+	function onPointerUp() {
+		if (pending) {
+			// Was a click, not a drag — navigate
+			const id = pending.id;
+			pending = null;
+			goto(`/threads/${id}`);
+			return;
 		}
-		draggedThreadId = null;
+
+		if (!dragId || !layoutOverride) {
+			dragId = null;
+			ghostPos = null;
+			layoutOverride = null;
+			return;
+		}
+
+		// Find which column the dragged thread ended up in
+		let newStatus: ThreadStatus | null = null;
+		for (const col of columns) {
+			if ((layoutOverride[col.status] ?? []).includes(dragId)) {
+				newStatus = col.status;
+				break;
+			}
+		}
+
+		const thread = threads.get(dragId);
+		if (thread && newStatus && thread.status !== newStatus) {
+			threads.update(thread.id, { status: newStatus, updatedAt: new Date().toISOString() });
+		}
+
+		dragId = null;
+		ghostPos = null;
+		layoutOverride = null;
 	}
 </script>
+
+<svelte:window onpointerup={onPointerUp} />
 
 <div class="threads-page">
 	<header class="page-header">
@@ -92,48 +246,75 @@
 		</div>
 	</header>
 
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	{#if viewMode === 'kanban'}
-		<div class="kanban">
+		<div
+			class="kanban"
+			class:is-dragging={dragId !== null}
+			onpointermove={onPointerMove}
+		>
 			{#each columns as col, ci}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="kanban-col"
-				class:drop-target={dropTargetStatus === col.status && draggedThreadId !== null}
-				style="animation-delay: {ci * 60}ms"
-				ondragover={(e) => handleDragOver(e, col.status)}
-				ondragleave={(e) => handleDragLeave(e, e.currentTarget)}
-				ondrop={(e) => handleDrop(e, col.status)}
-			>
+				<div
+					class="kanban-col"
+					class:drop-target={dragId !== null && layoutOverride !== null && (layoutOverride[col.status] ?? []).includes(dragId)}
+					data-col={col.status}
+					style="animation-delay: {ci * 60}ms"
+				>
 					<div class="col-header">
 						<span class="col-dot" style="background: {col.color}"></span>
 						<span class="col-label">{col.label}</span>
-						<span class="col-count mono">{threadsByStatus(col.status).length}</span>
+						<span class="col-count mono">{displayThreads(col.status).length}</span>
 					</div>
 					<div class="col-cards">
-						{#each threadsByStatus(col.status) as thread, ti}
-							<a
-								href="/threads/{thread.id}"
-								class="thread-card"
-								class:dragging={draggedThreadId === thread.id}
-								style="animation-delay: {ci * 60 + ti * 40 + 80}ms"
-								draggable="true"
-								ondragstart={(e) => handleDragStart(e, thread.id)}
-								ondragend={handleDragEnd}
+						{#each displayThreads(col.status) as thread, ti (thread.id)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="thread-card-wrapper"
+								class:is-ghost={dragId === thread.id}
+								use:cardAction={thread.id}
+								onpointerdown={(e) => onPointerDown(e, thread.id)}
 							>
-								<h3 class="thread-title">{thread.title}</h3>
-								<p class="thread-question">{thread.question}</p>
-								<div class="thread-meta">
-									<span class="mono">{paperCount(thread.id)} papers</span>
-									{#if thread.synthesis}
-										<span class="has-synthesis" title="Has synthesis">●</span>
-									{/if}
+								<div
+									class="thread-card"
+									style="animation-delay: {ci * 60 + ti * 40 + 80}ms"
+								>
+									<h3 class="thread-title">{thread.title}</h3>
+									<p class="thread-question">{thread.question}</p>
+									<div class="thread-meta">
+										<span class="mono">{paperCount(thread.id)} papers</span>
+										{#if thread.synthesis}
+											<span class="has-synthesis" title="Has synthesis">●</span>
+										{/if}
+									</div>
 								</div>
-							</a>
+							</div>
 						{/each}
+						{#if displayThreads(col.status).length === 0 && dragId}
+							<div class="empty-drop-zone">Drop here</div>
+						{/if}
 					</div>
 				</div>
 			{/each}
 		</div>
+
+		<!-- Floating drag ghost -->
+		{#if ghostPos && dragId}
+			{@const thread = threads.get(dragId)}
+			{#if thread}
+				<div
+					class="drag-ghost"
+					style="left: {ghostPos.x}px; top: {ghostPos.y}px; width: {ghostPos.w}px;"
+				>
+					<div class="thread-card ghost-card">
+						<h3 class="thread-title">{thread.title}</h3>
+						<p class="thread-question">{thread.question}</p>
+						<div class="thread-meta">
+							<span class="mono">{paperCount(thread.id)} papers</span>
+						</div>
+					</div>
+				</div>
+			{/if}
+		{/if}
 	{:else}
 		<div class="list-view">
 			{#each threads.items as thread, i}
@@ -228,25 +409,29 @@
 		color: var(--text-primary);
 	}
 
-	/* Kanban */
+	/* ── Kanban ── */
 	.kanban {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		gap: var(--sp-5);
+		user-select: none;
+	}
+
+	.kanban.is-dragging {
+		cursor: grabbing;
 	}
 
 	.kanban-col {
 		animation: slideUp var(--duration-slow) var(--ease-out) both;
 		border-radius: var(--radius-md);
 		padding: var(--sp-3);
-		transition: background var(--duration-fast), outline var(--duration-fast);
-		outline: 2px dashed transparent;
-		outline-offset: -2px;
+		transition: background 200ms ease, box-shadow 200ms ease;
+		min-height: 120px;
 	}
 
 	.kanban-col.drop-target {
-		background: color-mix(in srgb, var(--accent) 6%, transparent);
-		outline-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 5%, transparent);
+		box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 25%, transparent);
 	}
 
 	.col-header {
@@ -280,35 +465,37 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--sp-3);
+		min-height: 40px;
+	}
+
+	/* ── Cards ── */
+	.thread-card-wrapper {
+		touch-action: none;
+	}
+
+	.thread-card-wrapper.is-ghost {
+		opacity: 0.15;
+		pointer-events: none;
 	}
 
 	.thread-card {
-		display: block;
 		padding: var(--sp-4);
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
-		text-decoration: none;
 		color: inherit;
-		transition: all var(--duration-fast) var(--ease-out);
+		transition: border-color 150ms ease, box-shadow 150ms ease;
 		animation: slideUp var(--duration-slow) var(--ease-out) both;
+		cursor: grab;
+	}
+
+	.kanban.is-dragging .thread-card {
+		cursor: grabbing;
 	}
 
 	.thread-card:hover {
 		border-color: var(--accent);
-		transform: translateY(-1px);
-	}
-
-	.thread-card.dragging {
-		opacity: 0.4;
-	}
-
-	.thread-card[draggable="true"] {
-		cursor: grab;
-	}
-
-	.thread-card[draggable="true"]:active {
-		cursor: grabbing;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 	}
 
 	.thread-title {
@@ -341,7 +528,33 @@
 		font-size: 0.6rem;
 	}
 
-	/* List view */
+	.empty-drop-zone {
+		padding: var(--sp-6) var(--sp-4);
+		border: 1.5px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+		border-radius: var(--radius-md);
+		text-align: center;
+		font-size: 0.78rem;
+		color: var(--text-tertiary);
+		background: color-mix(in srgb, var(--accent) 3%, transparent);
+	}
+
+	/* ── Drag ghost ── */
+	.drag-ghost {
+		position: fixed;
+		z-index: 10000;
+		pointer-events: none;
+		opacity: 0.92;
+		transform: rotate(1.5deg) scale(1.03);
+		filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.18));
+	}
+
+	.drag-ghost .ghost-card {
+		animation: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+	}
+
+	/* ── List view ── */
 	.list-view {
 		display: flex;
 		flex-direction: column;
@@ -406,14 +619,15 @@
 		text-align: right;
 	}
 
-	/* ── Tablet (≤1024px) ── */
+	/* ── Mobile ── */
 	@media (max-width: 768px) {
 		.header-left h1 {
 			font-size: 1.8rem;
 		}
 
 		.kanban {
-			gap: var(--sp-3);
+			grid-template-columns: 1fr;
+			gap: var(--sp-4);
 		}
 
 		.thread-card {
@@ -422,14 +636,6 @@
 
 		.new-thread-btn {
 			min-height: 44px;
-		}
-	}
-
-	/* ── Phone / small tablet (≤768px) ── */
-	@media (max-width: 768px) {
-		.kanban {
-			grid-template-columns: 1fr;
-			gap: var(--sp-4);
 		}
 
 		.page-header {
