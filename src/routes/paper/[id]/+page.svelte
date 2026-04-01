@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
 	import type { ReadingStatus, AnnotationType, ChatMessage } from '$lib/types';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
@@ -48,7 +49,7 @@
 	// Register this paper as open in the tab bar
 	$effect(() => {
 		const id = page.params.id;
-		if (id) ui.openPaper(id);
+		if (id) untrack(() => ui.openPaper(id));
 	});
 
 	const paperThreads = $derived(
