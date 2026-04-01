@@ -231,6 +231,7 @@
 		if (!paper || summaryLoading) return;
 		summaryLoading = true;
 		summaryError = null;
+		summaryScrolledToEnd = false;
 		try {
 			const res = await fetch('/api/papers/summary', {
 				method: 'POST',
@@ -242,6 +243,11 @@
 				summaryError = data.error || 'Failed to generate summary';
 			} else {
 				papers.update(paper.id, { summary: data.summary, summaryDate: data.summaryDate });
+				if (regenerate) {
+					papers.update(paper.id, { readingStatus: 'reading' });
+				} else if (paper.readingStatus === 'unread') {
+					papers.update(paper.id, { readingStatus: 'reading' });
+				}
 			}
 		} catch (err: any) {
 			summaryError = err.message || 'Network error';
@@ -249,6 +255,16 @@
 			summaryLoading = false;
 		}
 	}
+	let summaryScrolledToEnd = false;
+	function handleSummaryScroll(e: Event) {
+		if (summaryScrolledToEnd || !paper || paper.readingStatus === 'read' || paper.readingStatus === 'archived') return;
+		const el = e.target as HTMLElement;
+		if (el.scrollTop + el.clientHeight >= el.scrollHeight - 20) {
+			summaryScrolledToEnd = true;
+			papers.update(paper.id, { readingStatus: 'read' });
+		}
+	}
+
 	let noteInput = $state('');
 	let editingTags = $state(false);
 	let addingLink = $state(false);
@@ -541,7 +557,8 @@
 					</button>
 				</div>
 
-				<div class="panel-content">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="panel-content" onscroll={activeTab === 'summary' ? handleSummaryScroll : undefined}>
 					{#if activeTab === 'summary'}
 						<div class="summary-tab">
 							{#if summaryLoading}
