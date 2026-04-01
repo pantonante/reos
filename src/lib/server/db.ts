@@ -193,7 +193,13 @@ export const db = {
 	},
 
 	removePaper(id: string) {
-		getDb().prepare('DELETE FROM papers WHERE id = ?').run(id);
+		const d = getDb();
+		d.prepare('DELETE FROM annotations WHERE paperId = ?').run(id);
+		d.prepare('DELETE FROM notes WHERE paperId = ?').run(id);
+		// Delete chats and their messages (cascade handles messages)
+		d.prepare('DELETE FROM chats WHERE paperId = ?').run(id);
+		d.prepare('DELETE FROM thread_papers WHERE paperId = ?').run(id);
+		d.prepare('DELETE FROM papers WHERE id = ?').run(id);
 	},
 
 	// Threads
@@ -287,6 +293,18 @@ export const db = {
 
 	removeThread(id: string) {
 		getDb().prepare('DELETE FROM threads WHERE id = ?').run(id);
+	},
+
+	// Get papers that belong ONLY to a specific thread (not in any other thread)
+	getExclusivePapers(threadId: string): string[] {
+		const rows = getDb().prepare(`
+			SELECT tp.paperId FROM thread_papers tp
+			WHERE tp.threadId = ?
+			AND tp.paperId NOT IN (
+				SELECT paperId FROM thread_papers WHERE threadId != ?
+			)
+		`).all(threadId, threadId) as { paperId: string }[];
+		return rows.map(r => r.paperId);
 	},
 
 	// Annotations

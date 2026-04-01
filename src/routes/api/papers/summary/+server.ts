@@ -16,7 +16,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ summary: paper.summary, summaryDate: paper.summaryDate });
 	}
 
-	const pdfPath = path.join(PDF_DIR, `${paper.arxivId}.pdf`);
+	const pdfPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
 	if (!fs.existsSync(pdfPath)) {
 		return json({ error: 'PDF not found on disk' }, { status: 404 });
 	}

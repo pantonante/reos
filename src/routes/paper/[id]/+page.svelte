@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
@@ -463,6 +464,36 @@
 	function formatNoteTime(date: string) {
 		return new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 	}
+
+	let confirmingDelete = $state(false);
+
+	async function deletePaper() {
+		if (!paper) return;
+		const paperId = paper.id;
+
+		// Close the tab
+		ui.closePaper(paperId);
+
+		// Clean up local stores
+		annotations.items = annotations.items.filter(a => a.paperId !== paperId);
+		notes.items = notes.items.filter(n => n.paperId !== paperId);
+		chats.items = chats.items.filter(c => c.paperId !== paperId);
+
+		// Remove paper from any threads in local state
+		for (const t of threads.items) {
+			if (t.papers.some(tp => tp.paperId === paperId)) {
+				threads.update(t.id, {
+					papers: t.papers.filter(tp => tp.paperId !== paperId),
+					updatedAt: new Date().toISOString(),
+				});
+			}
+		}
+
+		// Remove from store (triggers API which handles DB + file cleanup)
+		await papers.remove(paperId);
+
+		goto('/library');
+	}
 </script>
 
 {#if !paper}
@@ -486,6 +517,17 @@
 						{/if}
 						{#if paper.arxivUrl}
 						<a href={paper.arxivUrl} target="_blank" rel="noopener" class="pdf-action mono">arxiv ↗</a>
+						{/if}
+						{#if confirmingDelete}
+							<div class="delete-confirm">
+								<span class="delete-confirm-text">Delete paper?</span>
+								<button class="delete-confirm-btn" onclick={deletePaper}>Delete</button>
+								<button class="delete-cancel-btn" onclick={() => confirmingDelete = false}>Cancel</button>
+							</div>
+						{:else}
+							<button class="pdf-action delete-action" onclick={() => confirmingDelete = true} title="Delete paper">
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+							</button>
 						{/if}
 					</div>
 					<button
@@ -1106,6 +1148,44 @@
 
 	.pdf-action:hover {
 		color: var(--accent);
+	}
+
+	.delete-action:hover {
+		color: var(--danger, #e53e3e) !important;
+	}
+
+	.delete-confirm {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+	}
+
+	.delete-confirm-text {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
+	}
+
+	.delete-confirm-btn {
+		font-size: 0.75rem;
+		padding: 2px var(--sp-3);
+		background: var(--danger, #e53e3e);
+		color: white;
+		border-radius: var(--radius-sm);
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.delete-cancel-btn {
+		font-size: 0.75rem;
+		padding: 2px var(--sp-3);
+		color: var(--text-secondary);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+	}
+
+	.delete-cancel-btn:hover {
+		background: var(--bg-raised);
 	}
 
 	/* Context panel */

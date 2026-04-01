@@ -40,7 +40,9 @@
 
 <style>
 	.paper-card {
-		display: block;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
 		padding: var(--sp-5);
 		background: var(--bg-raised);
 		border: 1px solid var(--border);
@@ -115,6 +117,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--sp-2);
+		margin-top: auto;
 	}
 
 	.tags {

@@ -25,7 +25,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	const { id } = await request.json();
 	const paper = db.getPaper(id);
 	if (paper) {
-		const pdfPath = path.join(PDF_DIR, `${paper.arxivId}.pdf`);
+		const pdfPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
 		try {
 			fs.unlinkSync(pdfPath);
 		} catch {

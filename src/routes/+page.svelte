@@ -65,7 +65,7 @@
 
 <style>
 	.inbox {
-		max-width: 960px;
+		max-width: 100%;
 	}
 
 	.page-header {

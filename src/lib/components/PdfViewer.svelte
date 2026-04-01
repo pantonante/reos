@@ -10,10 +10,11 @@
 		onCreateAnnotation: (selectedText: string, page: number) => void;
 		onClickAnnotation?: (annotation: Annotation) => void;
 		onToggleFullscreen?: () => void;
+		onScrolled?: () => void;
 		isFullscreen?: boolean;
 	}
 
-	let { arxivId, paperId, annotations, onCreateAnnotation, onClickAnnotation, onToggleFullscreen, isFullscreen = false }: Props = $props();
+	let { arxivId, paperId, annotations, onCreateAnnotation, onClickAnnotation, onToggleFullscreen, onScrolled, isFullscreen = false }: Props = $props();
 
 	let container: HTMLDivElement;
 	let pagesContainer: HTMLDivElement;
@@ -27,6 +28,18 @@
 
 	// Selection popover state
 	let popover = $state<{ x: number; y: number; text: string; page: number } | null>(null);
+
+	// Scroll tracking — fire onScrolled once user scrolls past 30%
+	let scrollFired = false;
+	function handleScroll() {
+		if (scrollFired || !onScrolled || !pagesContainer) return;
+		const { scrollTop, scrollHeight, clientHeight } = pagesContainer;
+		if (scrollHeight <= clientHeight) return;
+		if (scrollTop / (scrollHeight - clientHeight) >= 0.3) {
+			scrollFired = true;
+			onScrolled();
+		}
+	}
 
 	// Track page elements for intersection observer
 	let pageElements: Map<number, HTMLDivElement> = new Map();
@@ -327,7 +340,7 @@
 
 	<!-- PDF pages -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="pdf-pages" bind:this={pagesContainer} onmouseup={handleMouseUp}>
+	<div class="pdf-pages" bind:this={pagesContainer} onmouseup={handleMouseUp} onscroll={handleScroll}>
 		{#if loading}
 			<div class="pdf-loading">
 				<span class="mono">Loading PDF...</span>

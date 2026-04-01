@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { threads, papers, annotations, ui } from '$lib/stores.svelte';
+	import { threads, papers, annotations, notes, chats, ui } from '$lib/stores.svelte';
 	import AddPaperToThreadModal from '$lib/components/AddPaperToThreadModal.svelte';
 	import type { ThreadStatus, ReadingStatus } from '$lib/types';
 
@@ -211,6 +212,35 @@
 		threads.update(thread.id, { tags: thread.tags.filter(t => t !== tag), updatedAt: new Date().toISOString() });
 	}
 
+	let confirmingDelete = $state(false);
+
+	async function deleteThread() {
+		if (!thread) return;
+		const threadId = thread.id;
+
+		// Close the tab
+		ui.closeThread(threadId);
+
+		// Find papers exclusive to this thread to remove from local stores
+		const exclusivePaperIds = thread.papers
+			.filter(tp => !threads.items.some(t => t.id !== threadId && t.papers.some(p => p.paperId === tp.paperId)))
+			.map(tp => tp.paperId);
+
+		// Remove from store (triggers API call which handles DB + file cleanup)
+		await threads.remove(threadId);
+
+		// Clean up exclusive papers from local stores
+		for (const paperId of exclusivePaperIds) {
+			ui.closePaper(paperId);
+			annotations.items = annotations.items.filter(a => a.paperId !== paperId);
+			notes.items = notes.items.filter(n => n.paperId !== paperId);
+			chats.items = chats.items.filter(c => c.paperId !== paperId);
+			papers.items = papers.items.filter(p => p.id !== paperId);
+		}
+
+		goto('/threads');
+	}
+
 	// Timeline
 	const timelineData = $derived.by(() => {
 		if (!threadPapers.length) return [];
@@ -235,7 +265,20 @@
 		<!-- Main content -->
 		<div class="thread-main">
 			<header class="thread-header">
-				<a href="/threads" class="back-link text-tertiary">← Threads</a>
+				<div class="header-top-row">
+					<a href="/threads" class="back-link text-tertiary">← Threads</a>
+					{#if confirmingDelete}
+						<div class="delete-confirm">
+							<span class="delete-confirm-text">Delete thread and its exclusive papers?</span>
+							<button class="delete-confirm-btn" onclick={deleteThread}>Delete</button>
+							<button class="delete-cancel-btn" onclick={() => confirmingDelete = false}>Cancel</button>
+						</div>
+					{:else}
+						<button class="delete-btn" onclick={() => confirmingDelete = true} title="Delete thread">
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+						</button>
+					{/if}
+				</div>
 				{#if editingTitle}
 					<input
 						class="title-input"
@@ -692,10 +735,59 @@
 		margin-bottom: var(--sp-8);
 	}
 
+	.header-top-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--sp-4);
+	}
+
+	.delete-btn {
+		color: var(--text-tertiary);
+		padding: var(--sp-2);
+		border-radius: var(--radius-sm);
+		transition: color var(--duration-fast), background var(--duration-fast);
+	}
+
+	.delete-btn:hover {
+		color: var(--danger, #e53e3e);
+		background: color-mix(in srgb, var(--danger, #e53e3e) 10%, transparent);
+	}
+
+	.delete-confirm {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+	}
+
+	.delete-confirm-text {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.delete-confirm-btn {
+		font-size: 0.78rem;
+		padding: var(--sp-1) var(--sp-3);
+		background: var(--danger, #e53e3e);
+		color: white;
+		border-radius: var(--radius-sm);
+		font-weight: 500;
+	}
+
+	.delete-cancel-btn {
+		font-size: 0.78rem;
+		padding: var(--sp-1) var(--sp-3);
+		color: var(--text-secondary);
+		border-radius: var(--radius-sm);
+	}
+
+	.delete-cancel-btn:hover {
+		background: var(--bg-raised);
+	}
+
 	.back-link {
 		font-size: 0.82rem;
 		display: inline-block;
-		margin-bottom: var(--sp-4);
 	}
 
 	.back-link:hover {
