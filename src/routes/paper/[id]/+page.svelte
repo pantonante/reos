@@ -7,6 +7,7 @@
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import ChatMessages from '$lib/components/ChatMessages.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
+	import ConfirmDeleteModal from '$lib/components/ConfirmDeleteModal.svelte';
 	import { marked } from 'marked';
 	import markedKatex from 'marked-katex-extension';
 
@@ -518,17 +519,9 @@
 						{#if paper.arxivUrl}
 						<a href={paper.arxivUrl} target="_blank" rel="noopener" class="pdf-action mono">arxiv ↗</a>
 						{/if}
-						{#if confirmingDelete}
-							<div class="delete-confirm">
-								<span class="delete-confirm-text">Delete paper?</span>
-								<button class="delete-confirm-btn" onclick={deletePaper}>Delete</button>
-								<button class="delete-cancel-btn" onclick={() => confirmingDelete = false}>Cancel</button>
-							</div>
-						{:else}
-							<button class="pdf-action delete-action" onclick={() => confirmingDelete = true} title="Delete paper">
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-							</button>
-						{/if}
+						<button class="pdf-action delete-action" onclick={() => confirmingDelete = true} title="Delete paper">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+						</button>
 					</div>
 					<button
 						class="context-toggle"
@@ -995,6 +988,15 @@
 			</div>
 		</div>
 	</div>
+
+	{#if confirmingDelete}
+		<ConfirmDeleteModal
+			title="Delete paper"
+			message="This paper, its annotations, notes, and chats will be permanently deleted."
+			onconfirm={deletePaper}
+			oncancel={() => confirmingDelete = false}
+		/>
+	{/if}
 {/if}
 
 <style>
@@ -1152,40 +1154,6 @@
 
 	.delete-action:hover {
 		color: var(--danger, #e53e3e) !important;
-	}
-
-	.delete-confirm {
-		display: flex;
-		align-items: center;
-		gap: var(--sp-2);
-	}
-
-	.delete-confirm-text {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
-	}
-
-	.delete-confirm-btn {
-		font-size: 0.75rem;
-		padding: 2px var(--sp-3);
-		background: var(--danger, #e53e3e);
-		color: white;
-		border-radius: var(--radius-sm);
-		font-weight: 500;
-		cursor: pointer;
-	}
-
-	.delete-cancel-btn {
-		font-size: 0.75rem;
-		padding: 2px var(--sp-3);
-		color: var(--text-secondary);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-
-	.delete-cancel-btn:hover {
-		background: var(--bg-raised);
 	}
 
 	/* Context panel */
