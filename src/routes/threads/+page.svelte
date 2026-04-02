@@ -279,7 +279,6 @@
 									style="animation-delay: {ci * 60 + ti * 40 + 80}ms"
 								>
 									<h3 class="thread-title">{thread.title}</h3>
-									<p class="thread-question">{thread.question}</p>
 									<div class="thread-meta">
 										<span class="mono">{paperCount(thread.id)} papers</span>
 										{#if thread.synthesis}
@@ -307,7 +306,6 @@
 				>
 					<div class="thread-card ghost-card">
 						<h3 class="thread-title">{thread.title}</h3>
-						<p class="thread-question">{thread.question}</p>
 						<div class="thread-meta">
 							<span class="mono">{paperCount(thread.id)} papers</span>
 						</div>
@@ -326,7 +324,6 @@
 					<span class="row-status-dot" style="background: {columns.find(c => c.status === thread.status)?.color}"></span>
 					<div class="row-content">
 						<span class="row-title">{thread.title}</span>
-						<span class="row-question text-tertiary">{thread.question}</span>
 					</div>
 					<span class="row-papers mono">{paperCount(thread.id)}</span>
 					<span class="row-status mono">{thread.status}</span>
@@ -504,17 +501,6 @@
 		margin-bottom: var(--sp-2);
 	}
 
-	.thread-question {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		line-height: 1.45;
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-		margin-bottom: var(--sp-3);
-	}
-
 	.thread-meta {
 		display: flex;
 		align-items: center;
@@ -595,13 +581,6 @@
 		font-family: var(--font-display);
 		font-size: 1rem;
 		font-weight: 500;
-	}
-
-	.row-question {
-		font-size: 0.8rem;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.row-papers {
