@@ -8,9 +8,9 @@
 		ui.openPaperIds
 			.map(id => {
 				const paper = papers.get(id);
-				return paper ? { id, title: paper.title, kind: 'paper' as const } : null;
+				return paper ? { id, title: paper.title, kind: 'paper' as const, readingStatus: paper.readingStatus } : null;
 			})
-			.filter(Boolean) as { id: string; title: string; kind: 'paper' }[]
+			.filter(Boolean) as { id: string; title: string; kind: 'paper'; readingStatus: string }[]
 	);
 
 	const threadTabs = $derived(
@@ -22,7 +22,7 @@
 			.filter(Boolean) as { id: string; title: string; kind: 'thread' }[]
 	);
 
-	const tabs = $derived([...threadTabs, ...paperTabs]);
+	const tabs = $derived([...threadTabs, ...paperTabs] as Array<{ id: string; title: string; kind: 'paper' | 'thread'; readingStatus?: string }>);
 
 	const currentId = $derived(
 		page.url.pathname.startsWith('/paper/') ? page.params.id :
@@ -167,6 +167,9 @@
 								<path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M6 13h12"/><path d="M6 17h12"/>
 							</svg>
 						{/if}
+						{#if tab.kind === 'paper' && (tab.readingStatus === 'unread' || tab.readingStatus === 'reading')}
+								<span class="status-dot" class:reading={tab.readingStatus === 'reading'}></span>
+							{/if}
 						<span class="tab-title">{tab.title}</span>
 					</a>
 					<button
@@ -300,6 +303,7 @@
 	.tab-link {
 		display: flex;
 		align-items: center;
+		gap: 6px;
 		flex: 1;
 		min-width: 0;
 		padding: var(--sp-2) var(--sp-3);
@@ -316,6 +320,18 @@
 	.tab.active .tab-icon {
 		opacity: 1;
 		color: var(--accent);
+	}
+
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+		flex-shrink: 0;
+	}
+
+	.status-dot.reading {
+		background: var(--warning, #e5a00d);
 	}
 
 	.tab-title {
