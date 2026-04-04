@@ -73,6 +73,7 @@
 	let activeTab = $state<'summary' | 'info' | 'notes' | 'chat'>('summary');
 	let summaryLoading = $state(false);
 	let summaryError = $state<string | null>(null);
+	let cachedSummaryCheckedForId = $state<string | null>(null);
 
 	// Chat state for paper context
 	let chatMessages = $state<ChatMessage[]>([]);
@@ -230,6 +231,17 @@
 
 	const summaryHtml = $derived(paper?.summary ? marked(paper.summary) : '');
 
+	async function loadCachedSummary(paperId: string) {
+		try {
+			const res = await fetch(`/api/papers/summary?id=${encodeURIComponent(paperId)}`);
+			if (!res.ok) return;
+			const data = await res.json();
+			papers.update(paperId, { summary: data.summary, summaryDate: data.summaryDate });
+		} catch {
+			// Best-effort cache sync; absence is handled by the summary empty state.
+		}
+	}
+
 	async function generateSummary(regenerate = false) {
 		if (!paper || summaryLoading) return;
 		summaryLoading = true;
@@ -258,6 +270,19 @@
 			summaryLoading = false;
 		}
 	}
+
+	$effect(() => {
+		const currentPaper = paper;
+		if (!currentPaper) return;
+		const currentPaperId = currentPaper.id;
+		if (currentPaper.summary) {
+			cachedSummaryCheckedForId = currentPaperId;
+			return;
+		}
+		if (cachedSummaryCheckedForId === currentPaperId) return;
+		cachedSummaryCheckedForId = currentPaperId;
+		loadCachedSummary(currentPaperId);
+	});
 	let summaryScrolledToEnd = false;
 	function handleSummaryScroll(e: Event) {
 		if (summaryScrolledToEnd || !paper || paper.readingStatus === 'read' || paper.readingStatus === 'archived') return;

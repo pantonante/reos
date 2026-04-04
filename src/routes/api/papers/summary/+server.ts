@@ -1,22 +1,44 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { PDF_DIR } from '$lib/server/pdf-storage';
+import { readSummary, writeSummary } from '$lib/server/summary';
 import type { RequestHandler } from './$types';
 import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+
+export const GET: RequestHandler = async ({ url }) => {
+	const id = url.searchParams.get('id');
+	if (!id) return json({ error: 'Paper id is required' }, { status: 400 });
+
+	const paper = db.getPaper(id);
+	if (!paper) return json({ error: 'Paper not found' }, { status: 404 });
+
+	const arxivId = paper.arxivId || paper.id;
+	const cached = readSummary(arxivId);
+	if (!cached) {
+		return json({ error: 'Summary not found' }, { status: 404 });
+	}
+
+	return json(cached);
+};
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { id, regenerate } = await request.json();
 	const paper = db.getPaper(id);
 	if (!paper) return json({ error: 'Paper not found' }, { status: 404 });
 
-	// Return cached summary unless regenerating
-	if (paper.summary && !regenerate) {
-		return json({ summary: paper.summary, summaryDate: paper.summaryDate });
+	const arxivId = paper.arxivId || paper.id;
+
+	// Return cached summary from disk unless regenerating
+	if (!regenerate) {
+		const cached = readSummary(arxivId);
+		if (cached) {
+			return json(cached);
+		}
 	}
 
-	const pdfPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
+	const pdfPath = path.join(PDF_DIR, `${arxivId}.pdf`);
 	if (!fs.existsSync(pdfPath)) {
 		return json({ error: 'PDF not found on disk' }, { status: 404 });
 	}
@@ -64,9 +86,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			child.stdin?.end();
 		});
 
-		// Save to database
-		const summaryDate = new Date().toISOString();
-		db.updatePaper(id, { summary, summaryDate });
+		// Write summary to disk
+		const summaryDate = writeSummary(arxivId, summary);
 
 		return json({ summary, summaryDate });
 	} catch (err: any) {
