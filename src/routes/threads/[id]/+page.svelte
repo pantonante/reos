@@ -13,7 +13,7 @@
 		if (id) untrack(() => ui.openThread(id));
 	});
 
-	let viewMode = $state<'narrative' | 'status' | 'matrix' | 'timeline' | 'graph'>('narrative');
+	let viewMode = $state<'timeline' | 'status' | 'matrix' | 'graph'>('timeline');
 	let showAddPaper = $state(false);
 	let editingTitle = $state(false);
 	let titleInput = $state('');
@@ -250,17 +250,21 @@
 		goto('/threads');
 	}
 
-	// Timeline
+	// Timeline — vertical, sorted chronologically
 	const timelineData = $derived.by(() => {
 		if (!threadPapers.length) return [];
-		const dates = threadPapers.map(tp => new Date(tp.paper!.publishedDate).getTime());
-		const min = Math.min(...dates);
-		const max = Math.max(...dates);
-		const range = max - min || 1;
-		return threadPapers.map(tp => ({
-			...tp,
-			position: ((new Date(tp.paper!.publishedDate).getTime() - min) / range) * 100,
-		}));
+		const sorted = [...threadPapers].sort((a, b) =>
+			new Date(a.paper!.publishedDate).getTime() - new Date(b.paper!.publishedDate).getTime()
+		);
+		// Group by month-year for section headers
+		let lastGroup = '';
+		return sorted.map(tp => {
+			const d = new Date(tp.paper!.publishedDate);
+			const group = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+			const showGroup = group !== lastGroup;
+			lastGroup = group;
+			return { ...tp, group, showGroup };
+		});
 	});
 </script>
 
@@ -313,7 +317,7 @@
 
 			<div class="view-bar">
 				<div class="view-tabs">
-					{#each ['narrative', 'status', 'matrix', 'timeline', 'graph'] as mode}
+					{#each ['timeline', 'status', 'matrix', 'graph'] as mode}
 						<button
 							class="view-tab"
 							class:active={viewMode === mode}
@@ -329,23 +333,27 @@
 				</button>
 			</div>
 
-			{#if viewMode === 'narrative'}
-				<div class="narrative">
-					{#each threadPapers as tp, i}
-						<div class="narrative-item" style="animation-delay: {i * 50 + 60}ms">
-							<div class="narrative-line">
-								<span class="narrative-number mono">{String(i + 1).padStart(2, '0')}</span>
-								<div class="narrative-connector"></div>
+			{#if viewMode === 'timeline'}
+				<div class="timeline-view">
+					{#each timelineData as tp, i}
+						{#if tp.showGroup}
+							<div class="tl-group-row" style="animation-delay: {i * 50}ms">
+								<div class="tl-rail">
+									<div class="tl-dot tl-dot-month"></div>
+								</div>
+								<span class="tl-group-label mono">{tp.group}</span>
 							</div>
-							<div class="narrative-status-dot-container">
-								{#if tp.paper?.readingStatus === 'unread' || tp.paper?.readingStatus === 'reading'}
-									<span class="narrative-status-dot" style="background: var({tp.paper.readingStatus === 'unread' ? '--status-unread' : '--status-active'})"></span>
-								{/if}
+						{/if}
+						{@const status = tp.paper?.readingStatus ?? 'read'}
+						{@const dotColor = status === 'unread' ? 'var(--status-unread)' : status === 'reading' ? 'var(--status-active)' : 'var(--text-tertiary)'}
+						<div class="tl-row" style="animation-delay: {i * 50}ms">
+							<div class="tl-rail">
+								<div class="tl-dot tl-dot-paper" style="background: {dotColor}; box-shadow: 0 0 0 1px {dotColor}30"></div>
 							</div>
-							<div class="narrative-content">
-								<a href="/paper/{tp.paperId}" class="narrative-paper-link">
-									<h3>{tp.paper?.title}</h3>
-									<span class="narrative-authors text-secondary">
+							<div class="tl-content">
+								<a href="/paper/{tp.paperId}" class="tl-card">
+									<h3 class="tl-title">{tp.paper?.title}</h3>
+									<span class="tl-authors text-secondary">
 										{tp.paper?.authors.slice(0, 3).join(', ')}{(tp.paper?.authors.length ?? 0) > 3 ? ' et al.' : ''} · {formatDate(tp.paper?.publishedDate ?? '')}
 									</span>
 								</a>
@@ -370,7 +378,7 @@
 				</div>
 
 				<!-- Synthesis section -->
-				<div class="synthesis-section" style="animation-delay: {threadPapers.length * 50 + 120}ms">
+				<div class="synthesis-section" style="animation-delay: {timelineData.length * 50 + 120}ms">
 					<div class="synthesis-header">
 						<h3 class="synthesis-label mono">Synthesis</h3>
 						{#if !editingSynthesis}
@@ -465,21 +473,6 @@
 								{/each}
 							</tbody>
 						</table>
-					</div>
-				</div>
-
-			{:else if viewMode === 'timeline'}
-				<div class="timeline-view">
-					<div class="timeline-track">
-						{#each timelineData as tp, i}
-							<div class="timeline-node" style="left: {tp.position}%; animation-delay: {i * 80}ms">
-								<a href="/paper/{tp.paperId}" class="timeline-dot" title={tp.paper?.title}></a>
-								<div class="timeline-label" class:offset-up={i % 2 === 0}>
-									<span class="tl-date mono">{formatDate(tp.paper?.publishedDate ?? '')}</span>
-									<span class="tl-title">{tp.paper?.title}</span>
-								</div>
-							</div>
-						{/each}
 					</div>
 				</div>
 
@@ -889,78 +882,7 @@
 		border-bottom-color: var(--accent);
 	}
 
-	/* Narrative */
-	.narrative {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-	}
-
-	.narrative-item {
-		display: flex;
-		gap: var(--sp-2);
-		animation: slideUp var(--duration-slow) var(--ease-out) both;
-	}
-
-	.narrative-line {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		width: 28px;
-		flex-shrink: 0;
-		margin-right: var(--sp-3);
-	}
-
-	.narrative-number {
-		font-size: 0.7rem;
-		color: var(--accent);
-		margin-bottom: var(--sp-2);
-	}
-
-	.narrative-connector {
-		flex: 1;
-		width: 1px;
-		background: var(--border);
-		min-height: var(--sp-6);
-	}
-
-	.narrative-content {
-		flex: 1;
-		padding-bottom: var(--sp-8);
-	}
-
-	.narrative-paper-link {
-		display: block;
-		text-decoration: none;
-		color: inherit;
-		margin-bottom: var(--sp-3);
-	}
-
-	.narrative-paper-link:hover h3 { color: var(--accent); }
-
-	.narrative-status-dot-container {
-		width: 12px;
-		flex-shrink: 0;
-		display: flex;
-		align-items: flex-start;
-		justify-content: center;
-		padding-top: 7px;
-	}
-
-	.narrative-status-dot {
-		display: block;
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-	}
-
-	.narrative-paper-link h3 {
-		font-size: 1.1rem;
-		margin-bottom: var(--sp-1);
-		transition: color var(--duration-fast);
-	}
-
-	.narrative-authors { font-size: 0.82rem; }
+	.tl-authors { font-size: 0.82rem; }
 
 	.context-note {
 		font-size: 0.9rem;
@@ -1187,57 +1109,103 @@
 
 	.context-cell { color: var(--text-secondary); max-width: 300px; }
 
-	/* Timeline */
-	.timeline-view { padding: var(--sp-16) 0; }
-
-	.timeline-track {
+	/* Timeline — vertical */
+	.timeline-view {
+		padding: var(--sp-2) 0 var(--sp-8);
 		position: relative;
-		height: 320px;
-		border-bottom: 1px solid var(--border);
 	}
 
-	.timeline-node {
+	/* Continuous vertical line */
+	.timeline-view::before {
+		content: '';
 		position: absolute;
-		bottom: 0;
-		transform: translateX(-50%);
+		left: 13px;
+		top: 0;
+		bottom: var(--sp-8);
+		width: 1px;
+		background: var(--border);
+	}
+
+	.tl-group-row {
+		display: flex;
+		align-items: center;
+		padding-top: var(--sp-4);
 		animation: fadeIn var(--duration-slow) var(--ease-out) both;
 	}
 
-	.timeline-dot {
-		display: block;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: var(--accent);
-		margin: 0 auto var(--sp-2);
-		transition: transform var(--duration-fast);
+	.tl-group-row .tl-rail {
+		align-self: stretch;
 	}
 
-	.timeline-dot:hover { transform: scale(1.5); }
+	.tl-group-label {
+		font-size: 0.65rem;
+		font-weight: 600;
+		color: var(--accent);
+		letter-spacing: 1.2px;
+		text-transform: uppercase;
+		padding: var(--sp-1) 0;
+	}
 
-	.timeline-label {
-		position: absolute;
-		bottom: var(--sp-5);
-		left: 50%;
-		transform: translateX(-50%);
-		text-align: center;
-		white-space: nowrap;
+	.tl-row {
+		display: flex;
+		align-items: stretch;
+		animation: fadeIn var(--duration-slow) var(--ease-out) both;
+	}
+
+	.tl-rail {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		align-items: center;
+		width: 28px;
+		flex-shrink: 0;
+		position: relative;
 	}
 
-	.timeline-label.offset-up { bottom: var(--sp-16); }
+	.tl-dot {
+		border-radius: 50%;
+		flex-shrink: 0;
+		z-index: 1;
+		border: 2px solid var(--bg-base);
+	}
 
-	.tl-date { font-size: 0.65rem; color: var(--text-tertiary); }
+	.tl-dot-month {
+		width: 11px;
+		height: 11px;
+		background: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent-muted);
+		margin-top: 2px;
+	}
+
+	.tl-dot-paper {
+		width: 8px;
+		height: 8px;
+		margin-top: 8px;
+	}
+
+	.tl-content {
+		flex: 1;
+		min-width: 0;
+		padding: 2px 0 var(--sp-2);
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-1);
+	}
+
+	.tl-card {
+		display: block;
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.tl-card:hover .tl-title { color: var(--accent); }
 
 	.tl-title {
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-		max-width: 160px;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		font-size: 1rem;
+		color: var(--text-primary);
+		line-height: 1.3;
+		transition: color var(--duration-fast);
 	}
+
 
 	/* Graph */
 	.thread-graph-placeholder { padding: var(--sp-8); text-align: center; }
