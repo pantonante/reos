@@ -1,6 +1,7 @@
 export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
 export type ThreadStatus = 'active' | 'paused' | 'concluded';
 export type AnnotationType = 'highlight' | 'note' | 'question' | 'cross-reference';
+export type ConnectionType = 'builds-on' | 'same-method' | 'same-topic' | 'contradicts' | 'complementary';
 
 export interface Paper {
 	id: string;
@@ -89,4 +90,14 @@ export interface Chat {
 	paperId: string | null;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface PaperConnection {
+	id: string;
+	fromPaperId: string;
+	toPaperId: string;
+	connectionType: ConnectionType;
+	strength: number;
+	explanation: string;
+	generatedAt: string;
 }

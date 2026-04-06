@@ -12,6 +12,7 @@
 	let messages = $state<ChatMessage[]>([]);
 	let isStreaming = $state(false);
 	let streamingContent = $state('');
+	let activeTools = $state<{ tool: string; input: string }[]>([]);
 
 	// Load messages when chatId changes
 	$effect(() => {
@@ -49,6 +50,7 @@
 		messages = [...messages, userMsg];
 		isStreaming = true;
 		streamingContent = '';
+		activeTools = [];
 
 		try {
 			const res = await fetch(`/api/chats/${chatId}/stream`, {
@@ -80,6 +82,16 @@
 						const event = JSON.parse(line.slice(6));
 						if (event.type === 'text') {
 							streamingContent += event.text;
+						}
+						if (event.type === 'tool_start') {
+							activeTools = [...activeTools, { tool: event.tool, input: '' }];
+						}
+						if (event.type === 'tool_input_delta' && activeTools.length > 0) {
+							const last = activeTools[activeTools.length - 1];
+							activeTools = [...activeTools.slice(0, -1), { ...last, input: last.input + event.text }];
+						}
+						if (event.type === 'tool_stop' && activeTools.length > 0) {
+							activeTools = activeTools.slice(0, -1);
 						}
 						if (event.type === 'done') {
 							// Use streamed content, or fall back to full result text
@@ -114,7 +126,7 @@
 </svelte:head>
 
 <div class="chat-detail">
-	<ChatMessages {messages} {isStreaming} {streamingContent} />
+	<ChatMessages {messages} {isStreaming} {streamingContent} {activeTools} />
 	<ChatInput onsend={sendMessage} disabled={isStreaming} />
 </div>
 

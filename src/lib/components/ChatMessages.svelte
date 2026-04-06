@@ -7,11 +7,24 @@
 		messages,
 		isStreaming = false,
 		streamingContent = '',
+		activeTools = [],
 	}: {
 		messages: ChatMessage[];
 		isStreaming?: boolean;
 		streamingContent?: string;
+		activeTools?: { tool: string; input: string }[];
 	} = $props();
+
+	function toolLabel(tool: { tool: string; input: string }): string {
+		// Try to extract a meaningful label from the JSON input
+		try {
+			const parsed = JSON.parse(tool.input);
+			if (tool.tool === 'WebSearch' && parsed.query) return `Searching: ${parsed.query}`;
+			if (tool.tool === 'WebFetch' && parsed.url) return `Fetching: ${parsed.url}`;
+		} catch { /* input still accumulating */ }
+		if (tool.tool === 'WebSearch') return 'Searching the web...';
+		return 'Fetching web page...';
+	}
 
 	let container: HTMLDivElement;
 
@@ -64,6 +77,17 @@
 				<span class="dot"></span><span class="dot"></span><span class="dot"></span>
 			</div>
 		</div>
+	{/if}
+
+	{#if activeTools.length > 0}
+		{#each activeTools as tool}
+			<div class="tool-activity">
+				<svg class="tool-icon spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+				</svg>
+				<span class="tool-label">{toolLabel(tool)}</span>
+			</div>
+		{/each}
 	{/if}
 </div>
 
@@ -179,6 +203,42 @@
 		margin: 0.5em 0;
 		padding-left: var(--sp-3);
 		color: var(--text-secondary);
+	}
+
+	/* Tool activity indicator */
+	.tool-activity {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		padding: var(--sp-2) var(--sp-3);
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		align-self: flex-start;
+		max-width: 80%;
+		animation: fadeIn var(--duration-fast) var(--ease-out);
+	}
+
+	.tool-icon {
+		flex-shrink: 0;
+		color: var(--accent);
+	}
+
+	.tool-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.spin {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
 	}
 
 	/* Typing indicator */

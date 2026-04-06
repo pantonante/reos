@@ -1,4 +1,4 @@
-import type { Paper, Thread, Annotation, Note, Chat } from './types';
+import type { Paper, Thread, Annotation, Note, Chat, PaperConnection } from './types';
 
 function createStore<T extends { id: string }>(initial: T[], endpoint: string) {
 	let items = $state<T[]>(initial);
@@ -64,6 +64,8 @@ export const annotations = createStore<Annotation>([], '/api/annotations');
 export const notes = createStore<Note>([], '/api/notes');
 
 export const chats = createStore<Chat>([], '/api/chats');
+
+export const connections = createStore<PaperConnection>([], '/api/papers/connections');
 
 // UI state
 export const ui = (() => {

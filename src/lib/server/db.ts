@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { Paper, Thread, Annotation, Note, ThreadPaper, ThreadLink, Chat, ChatMessage } from '$lib/types';
+import type { Paper, Thread, Annotation, Note, ThreadPaper, ThreadLink, Chat, ChatMessage, PaperConnection } from '$lib/types';
 
 const DATA_DIR = path.resolve('data');
 const DB_PATH = path.join(DATA_DIR, 'reos.db');
@@ -106,19 +106,24 @@ function initSchema(db: Database.Database) {
 			createdAt TEXT NOT NULL,
 			FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE
 		);
+
+		CREATE TABLE IF NOT EXISTS paper_connections (
+			id TEXT PRIMARY KEY,
+			fromPaperId TEXT NOT NULL,
+			toPaperId TEXT NOT NULL,
+			connectionType TEXT NOT NULL,
+			strength REAL NOT NULL,
+			explanation TEXT NOT NULL,
+			generatedAt TEXT NOT NULL,
+			FOREIGN KEY (fromPaperId) REFERENCES papers(id) ON DELETE CASCADE,
+			FOREIGN KEY (toPaperId) REFERENCES papers(id) ON DELETE CASCADE,
+			UNIQUE(fromPaperId, toPaperId, connectionType)
+		);
 	`);
 
 	// Migrations for existing databases
 	const cols = db.prepare("PRAGMA table_info(papers)").all() as { name: string }[];
 	const colNames = cols.map(c => c.name);
-	if (!colNames.includes('summary')) {
-		db.exec('ALTER TABLE papers ADD COLUMN summary TEXT');
-	}
-	if (!colNames.includes('summaryDate')) {
-		db.exec('ALTER TABLE papers ADD COLUMN summaryDate TEXT');
-		// Set today's date for existing summaries
-		db.exec(`UPDATE papers SET summaryDate = '${new Date().toISOString()}' WHERE summary IS NOT NULL`);
-	}
 	if (!colNames.includes('links')) {
 		db.exec("ALTER TABLE papers ADD COLUMN links TEXT NOT NULL DEFAULT '[]'");
 	}
@@ -143,8 +148,8 @@ export const db = {
 			citations: JSON.parse(r.citations),
 			links: JSON.parse(r.links || '[]'),
 			rating: r.rating ?? null,
-			summary: r.summary ?? null,
-			summaryDate: r.summaryDate ?? null,
+			summary: null as string | null,
+			summaryDate: null as string | null,
 		}));
 	},
 
@@ -159,21 +164,21 @@ export const db = {
 			citations: JSON.parse(r.citations),
 			links: JSON.parse(r.links || '[]'),
 			rating: r.rating ?? null,
-			summary: r.summary ?? null,
-			summaryDate: r.summaryDate ?? null,
+			summary: null as string | null,
+			summaryDate: null as string | null,
 		};
 	},
 
 	addPaper(paper: Paper) {
 		getDb().prepare(`
-			INSERT INTO papers (id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, citations, links, summary, summaryDate)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO papers (id, arxivId, title, authors, abstract, publishedDate, categories, tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, citations, links)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`).run(
 			paper.id, paper.arxivId, paper.title, JSON.stringify(paper.authors),
 			paper.abstract, paper.publishedDate, JSON.stringify(paper.categories),
 			JSON.stringify(paper.tags), paper.readingStatus, paper.rating,
 			paper.pdfPath, paper.arxivUrl, paper.addedAt, JSON.stringify(paper.citations),
-			JSON.stringify(paper.links || []), paper.summary ?? null, paper.summaryDate ?? null
+			JSON.stringify(paper.links || [])
 		);
 	},
 
@@ -181,9 +186,10 @@ export const db = {
 		const fields: string[] = [];
 		const values: any[] = [];
 		const jsonFields = ['authors', 'categories', 'tags', 'citations', 'links'];
+		const skipFields = ['id', 'summary', 'summaryDate'];
 
 		for (const [key, val] of Object.entries(data)) {
-			if (key === 'id') continue;
+			if (skipFields.includes(key)) continue;
 			fields.push(`"${key}" = ?`);
 			values.push(jsonFields.includes(key) ? JSON.stringify(val) : val);
 		}
@@ -199,6 +205,7 @@ export const db = {
 		// Delete chats and their messages (cascade handles messages)
 		d.prepare('DELETE FROM chats WHERE paperId = ?').run(id);
 		d.prepare('DELETE FROM thread_papers WHERE paperId = ?').run(id);
+		d.prepare('DELETE FROM paper_connections WHERE fromPaperId = ? OR toPaperId = ?').run(id, id);
 		d.prepare('DELETE FROM papers WHERE id = ?').run(id);
 	},
 
@@ -408,5 +415,29 @@ export const db = {
 		getDb().prepare('INSERT INTO chat_messages (id, chatId, role, content, createdAt) VALUES (?, ?, ?, ?, ?)').run(
 			msg.id, msg.chatId, msg.role, msg.content, msg.createdAt
 		);
+	},
+
+	// Paper Connections
+	getAllConnections(): PaperConnection[] {
+		return getDb().prepare('SELECT * FROM paper_connections ORDER BY strength DESC').all() as PaperConnection[];
+	},
+
+	getConnectionsForPaper(paperId: string): PaperConnection[] {
+		return getDb().prepare('SELECT * FROM paper_connections WHERE fromPaperId = ? OR toPaperId = ? ORDER BY strength DESC').all(paperId, paperId) as PaperConnection[];
+	},
+
+	addConnections(conns: PaperConnection[]) {
+		const d = getDb();
+		const insert = d.transaction(() => {
+			const stmt = d.prepare(`INSERT OR REPLACE INTO paper_connections (id, fromPaperId, toPaperId, connectionType, strength, explanation, generatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+			for (const c of conns) {
+				stmt.run(c.id, c.fromPaperId, c.toPaperId, c.connectionType, c.strength, c.explanation, c.generatedAt);
+			}
+		});
+		insert();
+	},
+
+	removeConnectionsForPaper(paperId: string) {
+		getDb().prepare('DELETE FROM paper_connections WHERE fromPaperId = ? OR toPaperId = ?').run(paperId, paperId);
 	},
 };

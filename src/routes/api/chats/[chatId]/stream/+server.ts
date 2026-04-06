@@ -92,6 +92,32 @@ export const POST: RequestHandler = async ({ request, params }) => {
 								)
 							);
 						}
+						// Forward tool use events (WebSearch, WebFetch)
+						if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+							const toolName = event.content_block.name;
+							if (toolName === 'WebSearch' || toolName === 'WebFetch') {
+								controller.enqueue(
+									new TextEncoder().encode(
+										`data: ${JSON.stringify({ type: 'tool_start', tool: toolName, id: event.content_block.id })}\n\n`
+									)
+								);
+							}
+						}
+						if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+							// Accumulate tool input for display
+							controller.enqueue(
+								new TextEncoder().encode(
+									`data: ${JSON.stringify({ type: 'tool_input_delta', text: event.delta.partial_json })}\n\n`
+								)
+							);
+						}
+						if (event.type === 'content_block_stop') {
+							controller.enqueue(
+								new TextEncoder().encode(
+									`data: ${JSON.stringify({ type: 'tool_stop' })}\n\n`
+								)
+							);
+						}
 						if (event.type === 'result') {
 							sessionId = event.session_id;
 							// Use result text as the canonical full response
