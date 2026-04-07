@@ -18,6 +18,7 @@
 			{ label: 'Go to Library', sublabel: 'Browse all papers', action: () => goto('/library') },
 			{ label: 'Go to Graph', sublabel: 'Explore citation graph', action: () => goto('/graph') },
 			{ label: 'Add Paper', sublabel: 'Import from Arxiv', action: () => { ui.commandPaletteOpen = false; ui.addPaperOpen = true; } },
+			{ label: 'Generate All Summaries', sublabel: 'Process papers without summaries', action: () => { ui.commandPaletteOpen = false; ui.batchSummaryOpen = true; } },
 		];
 
 		for (const n of nav) {

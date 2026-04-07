@@ -5,6 +5,7 @@
 	import PaperTabs from '$lib/components/PaperTabs.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
+	import BatchSummaryModal from '$lib/components/BatchSummaryModal.svelte';
 	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -82,6 +83,10 @@
 
 {#if ui.addPaperOpen}
 	<AddPaperModal />
+{/if}
+
+{#if ui.batchSummaryOpen}
+	<BatchSummaryModal />
 {/if}
 
 <style>

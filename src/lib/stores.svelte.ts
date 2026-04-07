@@ -21,6 +21,10 @@ function createStore<T extends { id: string }>(initial: T[], endpoint: string) {
 		get items() { return items; },
 		set items(v: T[]) { items = v; },
 		load,
+		async reload() {
+			loaded = false;
+			await load();
+		},
 		get(id: string) { return items.find(i => i.id === id); },
 		async add(item: T) {
 			items = [...items, item];
@@ -78,6 +82,7 @@ export const ui = (() => {
 	);
 	let mobileSidebarOpen = $state(false);
 	let pdfFullscreen = $state(false);
+	let batchSummaryOpen = $state(false);
 	let contextPanelOpen = $state(
 		typeof localStorage !== 'undefined'
 			? localStorage.getItem('reos:contextPanelOpen') !== 'false'
@@ -111,6 +116,8 @@ export const ui = (() => {
 	return {
 		get commandPaletteOpen() { return commandPaletteOpen; },
 		set commandPaletteOpen(v) { commandPaletteOpen = v; },
+		get batchSummaryOpen() { return batchSummaryOpen; },
+		set batchSummaryOpen(v) { batchSummaryOpen = v; },
 		get addPaperOpen() { return addPaperOpen; },
 		set addPaperOpen(v) { addPaperOpen = v; },
 		get sidebarCollapsed() { return sidebarCollapsed; },
