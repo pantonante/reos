@@ -50,7 +50,7 @@
 		const arxivId = extractArxivId(input);
 
 		if (!arxivId) {
-			error = 'Could not parse Arxiv ID. Try pasting a URL like arxiv.org/abs/2401.12345 or just the ID.';
+			error = 'Could not parse Arxiv ID. Try pasting a URL like arxiv.org/abs/2401.12345, alphaxiv.org/abs/2401.12345, or just the ID.';
 			return;
 		}
 
@@ -230,7 +230,7 @@
 				<input
 					type="text"
 					class="arxiv-input"
-					placeholder="e.g. 2401.12345 or arxiv.org/abs/2401.12345"
+					placeholder="e.g. 2401.12345, arxiv.org/abs/... or alphaxiv.org/abs/..."
 					bind:value={input}
 					autofocus
 				/>

@@ -49,7 +49,7 @@
 		const arxivId = extractArxivId(arxivInput);
 
 		if (!arxivId) {
-			error = 'Could not parse Arxiv ID. Try 2401.12345 or a full arxiv.org URL.';
+			error = 'Could not parse Arxiv ID. Try 2401.12345 or a full arxiv.org/alphaxiv.org URL.';
 			return;
 		}
 
