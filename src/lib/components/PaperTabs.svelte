@@ -129,6 +129,15 @@
 		tick().then(checkOverflow);
 	});
 
+	// Scroll active tab into view
+	$effect(() => {
+		if (!currentId || !scrollContainer) return;
+		tick().then(() => {
+			const activeEl = scrollContainer?.querySelector('.tab.active') as HTMLElement | null;
+			activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+		});
+	});
+
 	function toggleOverflow(e: MouseEvent) {
 		e.stopPropagation();
 		overflowOpen = !overflowOpen;
