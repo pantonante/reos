@@ -49,7 +49,7 @@
 		const arxivId = extractArxivId(arxivInput);
 
 		if (!arxivId) {
-			error = 'Could not parse Arxiv ID. Try 2401.12345 or a full arxiv.org/alphaxiv.org URL.';
+			error = 'Could not parse Arxiv ID. Try 2604.07209, arxiv:2604.07209, or a full arxiv.org / alphaxiv.org URL.';
 			return;
 		}
 
@@ -238,7 +238,7 @@
 				<input
 					type="text"
 					class="arxiv-input"
-					placeholder="Arxiv URL or ID, e.g. 2401.12345"
+					placeholder="e.g. 2604.07209, arxiv:2604.07209, or arxiv.org/abs/..."
 					bind:value={arxivInput}
 					autofocus
 				/>

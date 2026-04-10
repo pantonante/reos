@@ -50,7 +50,7 @@
 		const arxivId = extractArxivId(input);
 
 		if (!arxivId) {
-			error = 'Could not parse Arxiv ID. Try pasting a URL like arxiv.org/abs/2401.12345, alphaxiv.org/abs/2401.12345, or just the ID.';
+			error = 'Could not parse Arxiv ID. Try 2604.07209, arxiv:2604.07209, or a full arxiv.org / alphaxiv.org URL.';
 			return;
 		}
 
@@ -224,13 +224,13 @@
 
 		{#if mode === 'arxiv'}
 			<!-- Arxiv flow -->
-			<p class="subtitle">Paste an Arxiv URL or ID</p>
+			<p class="subtitle">Paste an Arxiv ID or URL</p>
 			<form onsubmit={e => { e.preventDefault(); handleArxivSubmit(); }}>
 				<!-- svelte-ignore a11y_autofocus -->
 				<input
 					type="text"
 					class="arxiv-input"
-					placeholder="e.g. 2401.12345, arxiv.org/abs/... or alphaxiv.org/abs/..."
+					placeholder="e.g. 2604.07209, arxiv:2604.07209, or arxiv.org/abs/..."
 					bind:value={input}
 					autofocus
 				/>
