@@ -27,6 +27,18 @@
 			}
 		}
 
+		// Threads (prioritized so "go to specific thread by name" is reliable)
+		for (const t of threads.items) {
+			if (!q || t.title.toLowerCase().includes(q) || t.question.toLowerCase().includes(q)) {
+				items.push({
+					type: 'thread',
+					label: t.title,
+					sublabel: t.question.slice(0, 80) + (t.question.length > 80 ? '…' : ''),
+					action: () => goto(`/threads/${t.id}`),
+				});
+			}
+		}
+
 		// Papers
 		for (const p of papers.items) {
 			if (!q || p.title.toLowerCase().includes(q) || p.authors.some(a => a.toLowerCase().includes(q)) || p.arxivId.includes(q)) {
@@ -35,18 +47,6 @@
 					label: p.title,
 					sublabel: `${p.authors[0]}${p.authors.length > 1 ? ' et al.' : ''} · ${p.arxivId}`,
 					action: () => goto(`/paper/${p.id}`),
-				});
-			}
-		}
-
-		// Threads
-		for (const t of threads.items) {
-			if (!q || t.title.toLowerCase().includes(q) || t.question.toLowerCase().includes(q)) {
-				items.push({
-					type: 'thread',
-					label: t.title,
-					sublabel: t.question.slice(0, 80) + (t.question.length > 80 ? '…' : ''),
-					action: () => goto(`/threads/${t.id}`),
 				});
 			}
 		}
@@ -62,6 +62,8 @@
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
 			ui.commandPaletteOpen = false;
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
@@ -81,6 +83,8 @@
 		ui.commandPaletteOpen = false;
 	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="palette-backdrop" onclick={() => ui.commandPaletteOpen = false} onkeydown={handleKeydown}>
