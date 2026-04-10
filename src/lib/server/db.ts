@@ -103,6 +103,7 @@ function initSchema(db: Database.Database) {
 			chatId TEXT NOT NULL,
 			role TEXT NOT NULL,
 			content TEXT NOT NULL,
+			parts TEXT,
 			createdAt TEXT NOT NULL,
 			FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE
 		);
@@ -133,6 +134,13 @@ function initSchema(db: Database.Database) {
 	const chatColNames = chatCols.map(c => c.name);
 	if (!chatColNames.includes('paperId')) {
 		db.exec('ALTER TABLE chats ADD COLUMN paperId TEXT');
+	}
+
+	// chat_messages migrations
+	const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
+	const msgColNames = msgCols.map(c => c.name);
+	if (!msgColNames.includes('parts')) {
+		db.exec('ALTER TABLE chat_messages ADD COLUMN parts TEXT');
 	}
 }
 
@@ -377,15 +385,42 @@ export const db = {
 
 	// Chats
 	getAllChats(): Chat[] {
-		return getDb().prepare('SELECT * FROM chats ORDER BY updatedAt DESC').all() as Chat[];
+		// Correlated subquery pulls each chat's first user message so the UI
+		// can fall back to it as a display label when `title` is a placeholder.
+		return getDb().prepare(`
+			SELECT chats.*, (
+				SELECT content FROM chat_messages
+				WHERE chatId = chats.id AND role = 'user'
+				ORDER BY createdAt ASC
+				LIMIT 1
+			) AS firstUserMessage
+			FROM chats
+			ORDER BY updatedAt DESC
+		`).all() as Chat[];
 	},
 
 	getChat(id: string): Chat | undefined {
-		return getDb().prepare('SELECT * FROM chats WHERE id = ?').get(id) as Chat | undefined;
+		return getDb().prepare(`
+			SELECT chats.*, (
+				SELECT content FROM chat_messages
+				WHERE chatId = chats.id AND role = 'user'
+				ORDER BY createdAt ASC
+				LIMIT 1
+			) AS firstUserMessage
+			FROM chats WHERE id = ?
+		`).get(id) as Chat | undefined;
 	},
 
 	getChatMessages(chatId: string): ChatMessage[] {
-		return getDb().prepare('SELECT * FROM chat_messages WHERE chatId = ? ORDER BY createdAt ASC').all(chatId) as ChatMessage[];
+		const rows = getDb().prepare('SELECT * FROM chat_messages WHERE chatId = ? ORDER BY createdAt ASC').all(chatId) as any[];
+		return rows.map(r => ({
+			id: r.id,
+			chatId: r.chatId,
+			role: r.role,
+			content: r.content,
+			parts: r.parts ? JSON.parse(r.parts) : null,
+			createdAt: r.createdAt,
+		}));
 	},
 
 	addChat(chat: Chat) {
@@ -412,8 +447,13 @@ export const db = {
 	},
 
 	addChatMessage(msg: ChatMessage) {
-		getDb().prepare('INSERT INTO chat_messages (id, chatId, role, content, createdAt) VALUES (?, ?, ?, ?, ?)').run(
-			msg.id, msg.chatId, msg.role, msg.content, msg.createdAt
+		getDb().prepare('INSERT INTO chat_messages (id, chatId, role, content, parts, createdAt) VALUES (?, ?, ?, ?, ?, ?)').run(
+			msg.id,
+			msg.chatId,
+			msg.role,
+			msg.content,
+			msg.parts ? JSON.stringify(msg.parts) : null,
+			msg.createdAt
 		);
 	},
 

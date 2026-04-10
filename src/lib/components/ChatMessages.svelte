@@ -8,22 +8,42 @@
 		isStreaming = false,
 		streamingContent = '',
 		activeTools = [],
+		thinkingContent = '',
+		thinkingBlocks = [],
+		accessedFiles = [],
 	}: {
 		messages: ChatMessage[];
 		isStreaming?: boolean;
 		streamingContent?: string;
 		activeTools?: { tool: string; input: string }[];
+		thinkingContent?: string;
+		thinkingBlocks?: string[];
+		accessedFiles?: string[];
 	} = $props();
 
+	function shortenPath(p: string): string {
+		const parts = p.split('/').filter(Boolean);
+		if (parts.length <= 2) return p;
+		return parts.slice(-2).join('/');
+	}
+
 	function toolLabel(tool: { tool: string; input: string }): string {
-		// Try to extract a meaningful label from the JSON input
 		try {
 			const parsed = JSON.parse(tool.input);
 			if (tool.tool === 'WebSearch' && parsed.query) return `Searching: ${parsed.query}`;
 			if (tool.tool === 'WebFetch' && parsed.url) return `Fetching: ${parsed.url}`;
+			if (tool.tool === 'Read' && parsed.file_path) return `Reading: ${shortenPath(parsed.file_path)}`;
+			if (tool.tool === 'Glob' && parsed.pattern) return `Finding: ${parsed.pattern}`;
+			if (tool.tool === 'Grep' && parsed.pattern) return `Searching: ${parsed.pattern}`;
 		} catch { /* input still accumulating */ }
-		if (tool.tool === 'WebSearch') return 'Searching the web...';
-		return 'Fetching web page...';
+		const labels: Record<string, string> = {
+			WebSearch: 'Searching the web...',
+			WebFetch: 'Fetching web page...',
+			Read: 'Reading file...',
+			Glob: 'Finding files...',
+			Grep: 'Searching files...',
+		};
+		return labels[tool.tool] || 'Working...';
 	}
 
 	let container: HTMLDivElement;
@@ -65,29 +85,62 @@
 		</div>
 	{/each}
 
-	{#if isStreaming && streamingContent}
+	{#if isStreaming}
 		<div class="message assistant">
 			<div class="message-label">Claude</div>
-			<div class="message-content markdown">{@html renderMarkdown(streamingContent)}</div>
-		</div>
-	{:else if isStreaming}
-		<div class="message assistant">
-			<div class="message-label">Claude</div>
-			<div class="message-content typing">
-				<span class="dot"></span><span class="dot"></span><span class="dot"></span>
-			</div>
-		</div>
-	{/if}
 
-	{#if activeTools.length > 0}
-		{#each activeTools as tool}
-			<div class="tool-activity">
-				<svg class="tool-icon spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M21 12a9 9 0 1 1-6.219-8.56" />
-				</svg>
-				<span class="tool-label">{toolLabel(tool)}</span>
-			</div>
-		{/each}
+			{#if thinkingBlocks.length > 0 || thinkingContent}
+				<div class="thinking-section">
+					{#each thinkingBlocks as block, i}
+						<details class="thinking-block">
+							<summary>Thought {i + 1}</summary>
+							<div class="thinking-text">{block}</div>
+						</details>
+					{/each}
+					{#if thinkingContent}
+						<details class="thinking-block" open>
+							<summary>Thinking…</summary>
+							<div class="thinking-text">{thinkingContent}</div>
+						</details>
+					{/if}
+				</div>
+			{/if}
+
+			{#if accessedFiles.length > 0}
+				<div class="accessed-files">
+					{#each accessedFiles as filePath}
+						<span class="file-pill" title={filePath}>
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+								<polyline points="14 2 14 8 20 8"/>
+							</svg>
+							{shortenPath(filePath)}
+						</span>
+					{/each}
+				</div>
+			{/if}
+
+			{#if activeTools.length > 0}
+				<div class="tools-section">
+					{#each activeTools as tool}
+						<div class="tool-activity">
+							<svg class="tool-icon spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+							</svg>
+							<span class="tool-label">{toolLabel(tool)}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			{#if streamingContent}
+				<div class="message-content markdown">{@html renderMarkdown(streamingContent)}</div>
+			{:else if !thinkingContent && thinkingBlocks.length === 0 && activeTools.length === 0}
+				<div class="message-content typing">
+					<span class="dot"></span><span class="dot"></span><span class="dot"></span>
+				</div>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -203,6 +256,93 @@
 		margin: 0.5em 0;
 		padding-left: var(--sp-3);
 		color: var(--text-secondary);
+	}
+
+	/* Thinking blocks */
+	.thinking-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-1);
+		margin-bottom: var(--sp-2);
+	}
+
+	.thinking-block {
+		background: var(--bg-base);
+		border-left: 2px solid var(--accent);
+		border-radius: var(--radius-sm);
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.thinking-block summary {
+		padding: var(--sp-2) var(--sp-3);
+		cursor: pointer;
+		font-style: italic;
+		user-select: none;
+		list-style: none;
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+	}
+
+	.thinking-block summary::before {
+		content: '▸';
+		font-style: normal;
+		font-size: 0.7rem;
+		transition: transform var(--duration-fast);
+	}
+
+	.thinking-block[open] summary::before {
+		transform: rotate(90deg);
+	}
+
+	.thinking-text {
+		padding: var(--sp-2) var(--sp-3);
+		padding-top: 0;
+		font-family: var(--font-mono);
+		white-space: pre-wrap;
+		max-height: 200px;
+		overflow-y: auto;
+		line-height: 1.5;
+		font-size: 0.75rem;
+	}
+
+	/* Accessed files pills */
+	.accessed-files {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--sp-1);
+		margin-bottom: var(--sp-2);
+	}
+
+	.file-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px var(--sp-2);
+		background: var(--bg-base);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		font-size: 0.72rem;
+		font-family: var(--font-mono);
+		color: var(--text-secondary);
+		white-space: nowrap;
+		max-width: 280px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.file-pill svg {
+		flex-shrink: 0;
+		color: var(--accent);
+	}
+
+	/* Tools section */
+	.tools-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-1);
+		margin-bottom: var(--sp-2);
 	}
 
 	/* Tool activity indicator */

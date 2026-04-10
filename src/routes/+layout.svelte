@@ -15,6 +15,7 @@
 	const showTabs = $derived(ui.openPaperIds.length > 0 || ui.openThreadIds.length > 0);
 	const isPaperRoute = $derived(page.url.pathname.startsWith('/paper/'));
 	const isThreadRoute = $derived(page.url.pathname.startsWith('/threads/') && page.params.id);
+	const isChatRoute = $derived(page.url.pathname.startsWith('/chat'));
 	const isFullscreen = $derived(ui.pdfFullscreen && isPaperRoute);
 
 	onMount(() => {
@@ -71,7 +72,7 @@
 		{#if showTabs && !isFullscreen}
 			<PaperTabs />
 		{/if}
-		<main class="main-content" class:no-padding={isPaperRoute}>
+		<main class="main-content" class:no-padding={isPaperRoute || isChatRoute}>
 			{@render children()}
 		</main>
 	</div>
