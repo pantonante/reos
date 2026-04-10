@@ -701,7 +701,7 @@
 		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} class:panel-collapsed={!ui.contextPanelOpen} style="--sidebar-w: {sidebarWidth}px">
 			<!-- Main panel (left) -->
 			<div class="pdf-panel">
-				{#if mainView === 'pdf'}
+				<div class="pdf-main" class:active={mainView === 'pdf'}>
 					{#each ui.openPaperIds as openId (openId)}
 						{@const openPaper = papers.get(openId)}
 						{#if openPaper}
@@ -718,124 +718,124 @@
 							</div>
 						{/if}
 					{/each}
-				{:else if mainView === 'summary'}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="main-view-panel summary-main" onscroll={handleSummaryScroll}>
-						<div class="summary-tab">
-							{#if summaryLoading}
-								<div class="summary-skeleton">
-									<div class="skel-line skel-h1"></div>
-									<div class="skel-line skel-meta"></div>
-									<div class="skel-spacer"></div>
-									<div class="skel-line skel-h2"></div>
-									<div class="skel-line skel-text"></div>
-									<div class="skel-line skel-text short"></div>
-									<div class="skel-line skel-text"></div>
-									<div class="skel-spacer"></div>
-									<div class="skel-line skel-h2"></div>
-									<div class="skel-line skel-text"></div>
-									<div class="skel-line skel-text"></div>
-									<div class="skel-line skel-text short"></div>
-									<div class="skel-spacer"></div>
-									<div class="skel-line skel-h2"></div>
-									<div class="skel-line skel-text"></div>
-									<div class="skel-line skel-text short"></div>
-									<p class="text-tertiary" style="margin-top: var(--sp-4); font-size: 0.75rem; text-align: center;">Generating summary with Claude...</p>
-								</div>
-							{:else if paper.summary}
-								<div class="summary-content markdown-body">
-									{@html summaryHtml}
-								</div>
-								<div class="summary-footer">
-									{#if paper.summaryDate}
-										<span class="summary-date text-tertiary">Generated {new Date(paper.summaryDate).toLocaleDateString()}</span>
-									{/if}
-									<button class="btn-regenerate" onclick={() => generateSummary(true)} disabled={summaryLoading}>
-										Regenerate
-									</button>
-								</div>
-							{:else if summaryError}
-								<div class="summary-error">
-									<p class="text-tertiary">{summaryError}</p>
-									<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Retry</button>
-								</div>
-							{:else}
-								<div class="summary-empty">
-									<p class="text-tertiary">No summary yet.</p>
-									<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Generate Summary</button>
-								</div>
-							{/if}
-						</div>
-					</div>
-				{:else}
-					<div class="main-view-panel chat-main">
-						<div class="chat-tab">
-							<div class="chat-header">
-								<div class="chat-picker" bind:this={chatPickerRef}>
-									<button class="chat-picker-btn" onclick={() => chatPickerOpen = !chatPickerOpen} title="Switch chat">
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-											<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-										</svg>
-										<span class="chat-picker-label">
-											{#if paperChatId}
-												{chatLabel(chats.get(paperChatId))}
-											{:else}
-												Select chat
-											{/if}
-										</span>
-										<svg class="chat-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<polyline points="6 9 12 15 18 9"/>
-										</svg>
-									</button>
-									{#if chatPickerOpen}
-										<div class="chat-picker-dropdown">
-											<button class="chat-picker-item new-chat" onclick={() => createPaperChat()}>
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-													<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-												</svg>
-												New chat
-											</button>
-											{#each paperChats as pc (pc.id)}
-												<div class="chat-picker-item" class:active={pc.id === paperChatId}>
-													<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
-														{chatLabel(pc)}
-													</button>
-													<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
-														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-															<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-														</svg>
-													</button>
-												</div>
-											{/each}
-											{#if paperChats.length === 0}
-												<p class="chat-picker-empty">No chats yet</p>
-											{/if}
-										</div>
-									{/if}
-								</div>
+				</div>
+
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="main-view-panel summary-main" class:active={mainView === 'summary'} onscroll={handleSummaryScroll}>
+					<div class="summary-tab">
+						{#if summaryLoading}
+							<div class="summary-skeleton">
+								<div class="skel-line skel-h1"></div>
+								<div class="skel-line skel-meta"></div>
+								<div class="skel-spacer"></div>
+								<div class="skel-line skel-h2"></div>
+								<div class="skel-line skel-text"></div>
+								<div class="skel-line skel-text short"></div>
+								<div class="skel-line skel-text"></div>
+								<div class="skel-spacer"></div>
+								<div class="skel-line skel-h2"></div>
+								<div class="skel-line skel-text"></div>
+								<div class="skel-line skel-text"></div>
+								<div class="skel-line skel-text short"></div>
+								<div class="skel-spacer"></div>
+								<div class="skel-line skel-h2"></div>
+								<div class="skel-line skel-text"></div>
+								<div class="skel-line skel-text short"></div>
+								<p class="text-tertiary" style="margin-top: var(--sp-4); font-size: 0.75rem; text-align: center;">Generating summary with Claude...</p>
 							</div>
-							{#if paperChatId}
-								<MessageStream
-									messages={chatMessages}
-									isStreaming={chatStreaming}
-									streamingText={chatStreamingContent}
-									liveThinkingBlocks={chatLiveThinkingBlocks}
-									liveThinkingCurrent={chatLiveThinkingCurrent}
-									liveTools={chatLiveTools}
-								/>
-							{:else}
-								<div class="chat-empty">
-									<p>A new conversation begins<br />when you ask the first question.</p>
-								</div>
-							{/if}
-							<ChatComposer
-								isStreaming={chatStreaming}
-								onsend={sendChatMessage}
-								onstop={stopChatStreaming}
-							/>
-						</div>
+						{:else if paper.summary}
+							<div class="summary-content markdown-body">
+								{@html summaryHtml}
+							</div>
+							<div class="summary-footer">
+								{#if paper.summaryDate}
+									<span class="summary-date text-tertiary">Generated {new Date(paper.summaryDate).toLocaleDateString()}</span>
+								{/if}
+								<button class="btn-regenerate" onclick={() => generateSummary(true)} disabled={summaryLoading}>
+									Regenerate
+								</button>
+							</div>
+						{:else if summaryError}
+							<div class="summary-error">
+								<p class="text-tertiary">{summaryError}</p>
+								<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Retry</button>
+							</div>
+						{:else}
+							<div class="summary-empty">
+								<p class="text-tertiary">No summary yet.</p>
+								<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Generate Summary</button>
+							</div>
+						{/if}
 					</div>
-				{/if}
+				</div>
+
+				<div class="main-view-panel chat-main" class:active={mainView === 'chat'}>
+					<div class="chat-tab">
+						<div class="chat-header">
+							<div class="chat-picker" bind:this={chatPickerRef}>
+								<button class="chat-picker-btn" onclick={() => chatPickerOpen = !chatPickerOpen} title="Switch chat">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+										<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+									</svg>
+									<span class="chat-picker-label">
+										{#if paperChatId}
+											{chatLabel(chats.get(paperChatId))}
+										{:else}
+											Select chat
+										{/if}
+									</span>
+									<svg class="chat-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<polyline points="6 9 12 15 18 9"/>
+									</svg>
+								</button>
+								{#if chatPickerOpen}
+									<div class="chat-picker-dropdown">
+										<button class="chat-picker-item new-chat" onclick={() => createPaperChat()}>
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+												<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+											</svg>
+											New chat
+										</button>
+										{#each paperChats as pc (pc.id)}
+											<div class="chat-picker-item" class:active={pc.id === paperChatId}>
+												<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
+													{chatLabel(pc)}
+												</button>
+												<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
+													<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+														<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+													</svg>
+												</button>
+											</div>
+										{/each}
+										{#if paperChats.length === 0}
+											<p class="chat-picker-empty">No chats yet</p>
+										{/if}
+									</div>
+								{/if}
+							</div>
+						</div>
+						{#if paperChatId}
+							<MessageStream
+								messages={chatMessages}
+								isStreaming={chatStreaming}
+								streamingText={chatStreamingContent}
+								liveThinkingBlocks={chatLiveThinkingBlocks}
+								liveThinkingCurrent={chatLiveThinkingCurrent}
+								liveTools={chatLiveTools}
+							/>
+						{:else}
+							<div class="chat-empty">
+								<p>A new conversation begins<br />when you ask the first question.</p>
+							</div>
+						{/if}
+						<ChatComposer
+							isStreaming={chatStreaming}
+							onsend={sendChatMessage}
+							onstop={stopChatStreaming}
+						/>
+					</div>
+				</div>
 			</div>
 
 				<!-- Resize handle -->
@@ -1228,11 +1228,16 @@
 		}
 
 		.main-view-panel {
+			display: none;
 			flex: 1;
 			min-height: 0;
 			overflow-y: auto;
 			background: var(--bg-raised);
 			padding: var(--sp-5);
+		}
+
+		.main-view-panel.active {
+			display: block;
 		}
 
 		.summary-main .summary-tab {
@@ -1344,6 +1349,17 @@
 		overflow: hidden;
 		background: var(--bg-base);
 		position: relative;
+	}
+
+	.pdf-main {
+		display: none;
+		flex: 1;
+		min-height: 0;
+		flex-direction: column;
+	}
+
+	.pdf-main.active {
+		display: flex;
 	}
 
 	.pdf-slot {
