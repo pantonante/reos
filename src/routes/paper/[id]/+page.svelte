@@ -14,7 +14,7 @@
 
 	marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
-	const paper = $derived(papers.get(page.params.id));
+	const paper = $derived(papers.get(page.params.id!));
 
 	// Resizable sidebar
 	let sidebarWidth = $state(380);
@@ -71,7 +71,8 @@
 		notes.items.filter(n => n.paperId === page.params.id)
 	);
 
-	let activeTab = $state<'summary' | 'info' | 'notes' | 'chat'>('summary');
+	let mainView = $state<'pdf' | 'summary' | 'chat'>('pdf');
+	let contextTab = $state<'info' | 'notes'>('info');
 	let summaryLoading = $state(false);
 	let summaryError = $state<string | null>(null);
 	let cachedSummaryCheckedForId = $state<string | null>(null);
@@ -160,6 +161,8 @@
 		const id = page.params.id;
 		if (id !== lastPaperId) {
 			lastPaperId = id;
+			mainView = 'pdf';
+			contextTab = 'info';
 			paperChatId = null;
 			chatMessages = [];
 			chatStreaming = false;
@@ -169,6 +172,12 @@
 			chatLiveTools = [];
 			chatAttachedPaperIds = new Set();
 		}
+	});
+
+	$effect(() => {
+		if (mainView !== 'chat') return;
+		if (paperChatId || paperChats.length === 0) return;
+		selectPaperChat(paperChats[0].id);
 	});
 
 	// Close chat picker on outside click
@@ -541,7 +550,8 @@
 		annotationType = 'highlight';
 		annotationColor = '#d4a05340';
 		// Switch to annotations tab to show context
-		activeTab = 'notes';
+		mainView = 'pdf';
+		contextTab = 'notes';
 	}
 
 	function saveAnnotation() {
@@ -570,7 +580,8 @@
 	}
 
 	function scrollToAnnotation(ann: any) {
-		activeTab = 'notes';
+		mainView = 'pdf';
+		contextTab = 'notes';
 	}
 
 	// Editing existing annotation
@@ -650,11 +661,14 @@
 	</div>
 {:else}
 	<div class="paper-detail" class:fullscreen={ui.pdfFullscreen}>
-		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} class:panel-collapsed={!ui.contextPanelOpen} style="--sidebar-w: {sidebarWidth}px">
-			<!-- PDF panel (left) -->
-			<div class="pdf-panel">
-				<div class="pdf-header-bar">
-					<span class="mono">{paper.arxivId || 'Uploaded PDF'}</span>
+		{#if !ui.pdfFullscreen}
+			<div class="paper-view-switcher">
+				<div class="paper-view-tabs" role="tablist" aria-label="Paper view">
+					<button class="paper-view-tab" class:active={mainView === 'pdf'} onclick={() => mainView = 'pdf'}>PDF</button>
+					<button class="paper-view-tab" class:active={mainView === 'summary'} onclick={() => mainView = 'summary'}>Summary</button>
+					<button class="paper-view-tab" class:active={mainView === 'chat'} onclick={() => mainView = 'chat'}>Chats</button>
+				</div>
+				<div class="paper-view-actions">
 					<div class="pdf-header-actions">
 						{#if page.data.isLocalhost}
 						<button onclick={() => fetch(`/api/pdf-proxy/reveal?id=${paper.arxivId || paper.id}`)} class="pdf-action mono">
@@ -681,67 +695,32 @@
 						</svg>
 					</button>
 				</div>
-				{#each ui.openPaperIds as openId (openId)}
-					{@const openPaper = papers.get(openId)}
-					{#if openPaper}
-						<div class="pdf-slot" class:active={openId === page.params.id}>
-							<PdfViewer
-								arxivId={openPaper.arxivId}
-								paperId={openPaper.id}
-								annotations={annotations.items.filter(a => a.paperId === openId)}
-								onCreateAnnotation={openAnnotationModal}
-								onClickAnnotation={scrollToAnnotation}
-								onToggleFullscreen={toggleFullscreen}
-								isFullscreen={ui.pdfFullscreen}
-							/>
-						</div>
-					{/if}
-				{/each}
 			</div>
+		{/if}
 
-			<!-- Resize handle -->
-			<div class="resize-handle" onpointerdown={onResizeStart} role="separator" aria-label="Resize sidebar"></div>
-
-			<!-- Context panel (right) -->
-			<div class="context-panel" class:panel-open={ui.contextPanelOpen} class:panel-fullscreen={panelFullscreen}>
-				<div class="panel-tabs">
-					{#each ['summary', 'info', 'notes', 'chat'] as tab}
-						<button
-							class="panel-tab"
-							class:active={activeTab === tab}
-							onclick={() => {
-								activeTab = tab as typeof activeTab;
-								if (tab === 'chat' && !paperChatId && paperChats.length > 0) {
-									selectPaperChat(paperChats[0].id);
-								}
-							}}
-						>
-							{tab.charAt(0).toUpperCase() + tab.slice(1)}
-							{#if tab === 'notes' && (paperAnnotations.length + paperNotes.length) > 0}
-								<span class="tab-count">{paperAnnotations.length + paperNotes.length}</span>
-							{/if}
-						</button>
-					{/each}
-					<button
-						class="panel-expand-btn"
-						onclick={() => panelFullscreen = !panelFullscreen}
-						aria-label={panelFullscreen ? 'Exit fullscreen panel' : 'Expand panel fullscreen'}
-					>
-						{#if panelFullscreen}
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
-							</svg>
-						{:else}
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
-							</svg>
+		<div class="reader-layout" class:fullscreen={ui.pdfFullscreen} class:resizing={isResizing} class:panel-collapsed={!ui.contextPanelOpen} style="--sidebar-w: {sidebarWidth}px">
+			<!-- Main panel (left) -->
+			<div class="pdf-panel">
+				{#if mainView === 'pdf'}
+					{#each ui.openPaperIds as openId (openId)}
+						{@const openPaper = papers.get(openId)}
+						{#if openPaper}
+							<div class="pdf-slot" class:active={openId === page.params.id}>
+								<PdfViewer
+									arxivId={openPaper.arxivId}
+									paperId={openPaper.id}
+									annotations={annotations.items.filter(a => a.paperId === openId)}
+									onCreateAnnotation={openAnnotationModal}
+									onClickAnnotation={scrollToAnnotation}
+									onToggleFullscreen={toggleFullscreen}
+									isFullscreen={ui.pdfFullscreen}
+								/>
+							</div>
 						{/if}
-					</button>
-				</div>
-
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="panel-content" onscroll={activeTab === 'summary' ? handleSummaryScroll : undefined}>
-					{#if activeTab === 'summary'}
+					{/each}
+				{:else if mainView === 'summary'}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="main-view-panel summary-main" onscroll={handleSummaryScroll}>
 						<div class="summary-tab">
 							{#if summaryLoading}
 								<div class="summary-skeleton">
@@ -778,20 +757,127 @@
 							{:else if summaryError}
 								<div class="summary-error">
 									<p class="text-tertiary">{summaryError}</p>
-									<button class="btn-save" onclick={generateSummary} style="margin-top: var(--sp-3)">Retry</button>
+									<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Retry</button>
 								</div>
 							{:else}
 								<div class="summary-empty">
 									<p class="text-tertiary">No summary yet.</p>
-									<button class="btn-save" onclick={generateSummary} style="margin-top: var(--sp-3)">Generate Summary</button>
+									<button class="btn-save" onclick={() => generateSummary()} style="margin-top: var(--sp-3)">Generate Summary</button>
 								</div>
 							{/if}
 						</div>
+					</div>
+				{:else}
+					<div class="main-view-panel chat-main">
+						<div class="chat-tab">
+							<div class="chat-header">
+								<div class="chat-picker" bind:this={chatPickerRef}>
+									<button class="chat-picker-btn" onclick={() => chatPickerOpen = !chatPickerOpen} title="Switch chat">
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+										</svg>
+										<span class="chat-picker-label">
+											{#if paperChatId}
+												{chatLabel(chats.get(paperChatId))}
+											{:else}
+												Select chat
+											{/if}
+										</span>
+										<svg class="chat-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="6 9 12 15 18 9"/>
+										</svg>
+									</button>
+									{#if chatPickerOpen}
+										<div class="chat-picker-dropdown">
+											<button class="chat-picker-item new-chat" onclick={() => createPaperChat()}>
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+													<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+												</svg>
+												New chat
+											</button>
+											{#each paperChats as pc (pc.id)}
+												<div class="chat-picker-item" class:active={pc.id === paperChatId}>
+													<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
+														{chatLabel(pc)}
+													</button>
+													<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
+														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+															<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+														</svg>
+													</button>
+												</div>
+											{/each}
+											{#if paperChats.length === 0}
+												<p class="chat-picker-empty">No chats yet</p>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+							{#if paperChatId}
+								<MessageStream
+									messages={chatMessages}
+									isStreaming={chatStreaming}
+									streamingText={chatStreamingContent}
+									liveThinkingBlocks={chatLiveThinkingBlocks}
+									liveThinkingCurrent={chatLiveThinkingCurrent}
+									liveTools={chatLiveTools}
+								/>
+							{:else}
+								<div class="chat-empty">
+									<p>A new conversation begins<br />when you ask the first question.</p>
+								</div>
+							{/if}
+							<ChatComposer
+								isStreaming={chatStreaming}
+								onsend={sendChatMessage}
+								onstop={stopChatStreaming}
+							/>
+						</div>
+					</div>
+				{/if}
+			</div>
 
-					{:else if activeTab === 'info'}
-						<div class="info-tab">
-							<!-- Status -->
-							<div class="field">
+				<!-- Resize handle -->
+				<div class="resize-handle" onpointerdown={onResizeStart} role="separator" aria-label="Resize sidebar"></div>
+
+				<!-- Context panel (right) -->
+				<div class="context-panel" class:panel-open={ui.contextPanelOpen} class:panel-fullscreen={panelFullscreen}>
+					<div class="panel-tabs">
+						{#each ['info', 'notes'] as tab}
+							<button
+								class="panel-tab"
+								class:active={contextTab === tab}
+								onclick={() => contextTab = tab as typeof contextTab}
+							>
+								{tab.charAt(0).toUpperCase() + tab.slice(1)}
+								{#if tab === 'notes' && (paperAnnotations.length + paperNotes.length) > 0}
+									<span class="tab-count">{paperAnnotations.length + paperNotes.length}</span>
+								{/if}
+							</button>
+						{/each}
+						<button
+							class="panel-expand-btn"
+							onclick={() => panelFullscreen = !panelFullscreen}
+							aria-label={panelFullscreen ? 'Exit fullscreen panel' : 'Expand panel fullscreen'}
+						>
+							{#if panelFullscreen}
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+								</svg>
+							{:else}
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+								</svg>
+							{/if}
+						</button>
+					</div>
+
+					<div class="panel-content">
+						{#if contextTab === 'info'}
+							<div class="info-tab">
+								<!-- Status -->
+								<div class="field">
 								<label class="field-label mono">Status</label>
 								<div class="status-pills">
 									{#each statusOptions as opt}
@@ -961,79 +1047,10 @@
 							</div>
 						</div>
 
-					{:else if activeTab === 'chat'}
-						<div class="chat-tab">
-							<div class="chat-header">
-								<div class="chat-picker" bind:this={chatPickerRef}>
-									<button class="chat-picker-btn" onclick={() => chatPickerOpen = !chatPickerOpen} title="Switch chat">
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-											<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-										</svg>
-										<span class="chat-picker-label">
-											{#if paperChatId}
-												{chatLabel(chats.get(paperChatId))}
-											{:else}
-												Select chat
-											{/if}
-										</span>
-										<svg class="chat-picker-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<polyline points="6 9 12 15 18 9"/>
-										</svg>
-									</button>
-									{#if chatPickerOpen}
-										<div class="chat-picker-dropdown">
-											<button class="chat-picker-item new-chat" onclick={() => createPaperChat()}>
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-													<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-												</svg>
-												New chat
-											</button>
-											{#each paperChats as pc (pc.id)}
-												<div class="chat-picker-item" class:active={pc.id === paperChatId}>
-													<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
-														{chatLabel(pc)}
-													</button>
-													<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
-														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-															<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-														</svg>
-													</button>
-												</div>
-											{/each}
-											{#if paperChats.length === 0}
-												<p class="chat-picker-empty">No chats yet</p>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							</div>
-							{#if paperChatId}
-								<MessageStream
-									messages={chatMessages}
-									isStreaming={chatStreaming}
-									streamingText={chatStreamingContent}
-									liveThinkingBlocks={chatLiveThinkingBlocks}
-									liveThinkingCurrent={chatLiveThinkingCurrent}
-									liveTools={chatLiveTools}
-									compact
-								/>
-							{:else}
-								<div class="chat-empty">
-									<p>A new conversation begins<br />when you ask the first question.</p>
-								</div>
-							{/if}
-							<ChatComposer
-								isStreaming={chatStreaming}
-								onsend={sendChatMessage}
-								onstop={stopChatStreaming}
-								compact
-							/>
-						</div>
-
-					{:else if activeTab === 'notes'}
-						<div class="notes-tab">
-							<!-- Annotation creation modal (inline) -->
-							{#if annotationModal}
+						{:else}
+							<div class="notes-tab">
+								<!-- Annotation creation modal (inline) -->
+								{#if annotationModal}
 								<div class="annotation-create-card">
 									<div class="create-header">
 										<span class="mono create-label">New annotation</span>
@@ -1141,11 +1158,10 @@
 								<button type="submit" class="note-send" disabled={!noteInput.trim()}>↵</button>
 							</form>
 						</div>
-
-					{/if}
+						{/if}
+					</div>
 				</div>
 			</div>
-		</div>
 	</div>
 
 	{#if confirmingDelete}
@@ -1158,22 +1174,88 @@
 	{/if}
 {/if}
 
-<style>
-	.paper-detail {
-		height: 100%;
-	}
+	<style>
+		.paper-detail {
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+		}
 
-	.not-found {
-		text-align: center;
-		padding: var(--sp-16);
-	}
+		.paper-view-switcher {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: var(--sp-3);
+			padding: var(--sp-2) var(--sp-4);
+			border-bottom: 1px solid var(--border);
+			background: var(--bg-raised);
+			flex-shrink: 0;
+		}
 
-	.reader-layout {
-		display: grid;
-		grid-template-columns: 1fr 0px var(--sidebar-w, 380px);
-		height: 100%;
-		transition: grid-template-columns var(--duration-normal) var(--ease-out);
-	}
+		.paper-view-tabs {
+			display: flex;
+			align-items: center;
+			gap: var(--sp-1);
+			min-width: 0;
+		}
+
+		.paper-view-actions {
+			display: flex;
+			align-items: center;
+			gap: var(--sp-3);
+			min-width: 0;
+			margin-left: auto;
+		}
+
+		.paper-view-tab {
+			padding: var(--sp-1) var(--sp-3);
+			font-size: 0.8rem;
+			font-family: var(--font-mono);
+			color: var(--text-tertiary);
+			border-radius: var(--radius-sm);
+			transition: background var(--duration-fast), color var(--duration-fast);
+		}
+
+		.paper-view-tab:hover {
+			background: var(--bg-hover);
+			color: var(--text-primary);
+		}
+
+		.paper-view-tab.active {
+			background: var(--accent-muted);
+			color: var(--accent);
+		}
+
+		.main-view-panel {
+			flex: 1;
+			min-height: 0;
+			overflow-y: auto;
+			background: var(--bg-raised);
+			padding: var(--sp-5);
+		}
+
+		.summary-main .summary-tab {
+			max-width: 980px;
+			margin: 0 auto;
+		}
+
+		.main-view-panel.chat-main {
+			padding: 0;
+		}
+
+		.not-found {
+			text-align: center;
+			padding: var(--sp-16);
+		}
+
+		.reader-layout {
+			display: grid;
+			grid-template-columns: 1fr 0px var(--sidebar-w, 380px);
+			flex: 1;
+			min-height: 0;
+			transition: grid-template-columns var(--duration-normal) var(--ease-out);
+		}
 
 	.reader-layout.resizing {
 		transition: none;
@@ -1234,24 +1316,24 @@
 		overflow: hidden;
 	}
 
-	/* Context toggle button in header bar */
 	.context-toggle {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: var(--sp-1);
+		padding: var(--sp-1) var(--sp-2);
 		color: var(--text-tertiary);
 		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast), background var(--duration-fast);
+		transition: background var(--duration-fast), color var(--duration-fast);
 		flex-shrink: 0;
 	}
 
 	.context-toggle:hover {
-		color: var(--text-primary);
 		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 
 	.context-toggle.active {
+		background: var(--accent-muted);
 		color: var(--accent);
 	}
 
@@ -1275,40 +1357,31 @@
 		display: block;
 	}
 
-	.pdf-header-bar {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--sp-2) var(--sp-4);
-		background: var(--bg-raised);
-		border-bottom: 1px solid var(--border);
-		font-size: 0.75rem;
-		color: var(--text-tertiary);
-		flex-shrink: 0;
-	}
-
 	.pdf-header-actions {
 		display: flex;
 		align-items: center;
-		gap: var(--sp-4);
+		gap: var(--sp-1);
 	}
 
 	.pdf-action {
 		display: flex;
 		align-items: center;
 		gap: var(--sp-1);
-		font-size: 0.72rem;
+		font-size: 0.8rem;
+		font-family: var(--font-mono);
 		color: var(--text-tertiary);
-		transition: color var(--duration-fast);
+		transition: background var(--duration-fast), color var(--duration-fast);
 		background: none;
 		border: none;
-		padding: 0;
+		padding: var(--sp-1) var(--sp-2);
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 		text-decoration: none;
 	}
 
 	.pdf-action:hover {
-		color: var(--accent);
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 
 	.delete-action:hover {
@@ -1889,8 +1962,6 @@
 		flex-direction: column;
 		height: 100%;
 		overflow: hidden;
-		margin: calc(-1 * var(--sp-5));
-		margin-top: 0;
 	}
 
 	.chat-header {
@@ -2362,6 +2433,33 @@
 
 	/* ── Tablet / iPad (≤768px) ── */
 	@media (max-width: 768px) {
+		.paper-view-switcher {
+			overflow-x: auto;
+			scrollbar-width: none;
+			padding: var(--sp-2);
+		}
+
+		.paper-view-switcher::-webkit-scrollbar {
+			display: none;
+		}
+
+		.paper-view-tab {
+			white-space: nowrap;
+		}
+
+		.paper-view-actions {
+			flex-shrink: 0;
+			gap: var(--sp-2);
+		}
+
+		.main-view-panel {
+			padding: var(--sp-4);
+		}
+
+		.main-view-panel.chat-main {
+			padding: 0;
+		}
+
 		.reader-layout {
 			grid-template-columns: 1fr;
 			position: relative;
@@ -2417,7 +2515,7 @@
 			min-height: 44px;
 		}
 
-		.pdf-header-bar .action-label {
+		.paper-view-actions .action-label {
 			display: none;
 		}
 	}
@@ -2428,12 +2526,16 @@
 		display: none;
 	}
 
-	.reader-layout.fullscreen .pdf-header-bar {
-		display: none;
-	}
-
 	/* ── Phone (≤480px) ── */
 	@media (max-width: 480px) {
+		.main-view-panel {
+			padding: var(--sp-3);
+		}
+
+		.main-view-panel.chat-main {
+			padding: 0;
+		}
+
 		.panel-content {
 			padding: var(--sp-3);
 		}
