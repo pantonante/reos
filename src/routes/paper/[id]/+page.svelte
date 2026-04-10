@@ -5,9 +5,10 @@
 	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
 	import type { ReadingStatus, AnnotationType, ChatMessage } from '$lib/types';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
-	import ChatMessages from '$lib/components/ChatMessages.svelte';
-	import ChatInput from '$lib/components/ChatInput.svelte';
+	import MessageStream, { type LiveTool } from '$lib/components/chat/MessageStream.svelte';
+	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ConfirmDeleteModal from '$lib/components/ConfirmDeleteModal.svelte';
+	import { chatLabel } from '$lib/chat-display';
 	import { marked } from 'marked';
 	import markedKatex from 'marked-katex-extension';
 
@@ -79,6 +80,11 @@
 	let chatMessages = $state<ChatMessage[]>([]);
 	let chatStreaming = $state(false);
 	let chatStreamingContent = $state('');
+	let chatLiveThinkingBlocks = $state<string[]>([]);
+	let chatLiveThinkingCurrent = $state('');
+	let chatLiveTools = $state<LiveTool[]>([]);
+	let chatAttachedPaperIds = $state(new Set<string>());
+	let chatAbortController: AbortController | null = null;
 	let paperChatId = $state<string | null>(null);
 	let chatPickerOpen = $state(false);
 	let chatPickerRef = $state<HTMLElement | null>(null);
@@ -110,10 +116,28 @@
 		chatMessages = [];
 		chatStreaming = false;
 		chatStreamingContent = '';
+		chatLiveThinkingBlocks = [];
+		chatLiveThinkingCurrent = '';
+		chatLiveTools = [];
+		chatAttachedPaperIds = new Set();
 		chatPickerOpen = false;
 		try {
 			const res = await fetch(`/api/chats/${chatId}/messages`);
-			if (res.ok) chatMessages = await res.json();
+			if (res.ok) {
+				const loaded: ChatMessage[] = await res.json();
+				chatMessages = loaded;
+				// If history already contains a document block for this paper,
+				// don't re-attach the PDF on the next message.
+				const docTitles = new Set<string>();
+				for (const m of loaded) {
+					for (const p of m.parts ?? []) {
+						if (p.type === 'document' && p.title) docTitles.add(p.title);
+					}
+				}
+				if (paper && docTitles.has(paper.title)) {
+					chatAttachedPaperIds.add(page.params.id!);
+				}
+			}
 		} catch { /* offline */ }
 	}
 
@@ -140,6 +164,10 @@
 			chatMessages = [];
 			chatStreaming = false;
 			chatStreamingContent = '';
+			chatLiveThinkingBlocks = [];
+			chatLiveThinkingCurrent = '';
+			chatLiveTools = [];
+			chatAttachedPaperIds = new Set();
 		}
 	});
 
@@ -157,30 +185,61 @@
 		}
 	});
 
-	async function sendChatMessage(text: string) {
+	async function sendChatMessage(text: string, mentionedPaperIds: string[] = []) {
 		// Auto-create a chat if none is selected
 		if (!paperChatId) {
 			await createPaperChat();
 		}
 		const chatId = paperChatId!;
-		const isFirstMessage = chatMessages.length === 0;
+		const currentPaperId = page.params.id;
 
+		// Auto-rename the chat from its placeholder title ("Chat", "Chat 2", …)
+		// to the first user message — same behavior as the standalone chat page,
+		// so paper-scoped chats also get meaningful titles after the first turn.
+		const chatRecord = chats.get(chatId);
+		if (chatRecord && /^Chat( \d+)?$/.test(chatRecord.title)) {
+			const title = text.length > 50 ? text.slice(0, 50) + '…' : text;
+			chats.update(chatId, { title, updatedAt: new Date().toISOString() });
+		}
+
+		// Decide which paperIds to attach as PDFs in this turn.
+		const toAttach: string[] = [];
+		if (currentPaperId && !chatAttachedPaperIds.has(currentPaperId)) {
+			toAttach.push(currentPaperId);
+		}
+		for (const pid of mentionedPaperIds) {
+			if (!chatAttachedPaperIds.has(pid) && !toAttach.includes(pid)) {
+				toAttach.push(pid);
+			}
+		}
+		for (const pid of toAttach) chatAttachedPaperIds.add(pid);
+		chatAttachedPaperIds = new Set(chatAttachedPaperIds);
+
+		// Optimistically add the user message
 		const userMsg: ChatMessage = {
 			id: `m${Date.now()}`,
 			chatId,
 			role: 'user',
 			content: text,
+			parts: [{ type: 'text', text }],
 			createdAt: new Date().toISOString(),
 		};
 		chatMessages = [...chatMessages, userMsg];
+
+		// Reset live state
 		chatStreaming = true;
 		chatStreamingContent = '';
+		chatLiveThinkingBlocks = [];
+		chatLiveThinkingCurrent = '';
+		chatLiveTools = [];
 
+		chatAbortController = new AbortController();
 		try {
 			const res = await fetch(`/api/chats/${chatId}/stream`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, ...(isFirstMessage && paper ? { paperId: paper.id } : {}) }),
+				body: JSON.stringify({ message: text, paperIds: toAttach }),
+				signal: chatAbortController.signal,
 			});
 
 			if (!res.ok || !res.body) {
@@ -203,30 +262,92 @@
 				for (const line of lines) {
 					if (!line.startsWith('data: ')) continue;
 					try {
-						const event = JSON.parse(line.slice(6));
-						if (event.type === 'text') chatStreamingContent += event.text;
-						if (event.type === 'done') {
-							chatMessages = [...chatMessages, {
-								id: `m${Date.now() + 1}`,
-								chatId,
-								role: 'assistant',
-								content: chatStreamingContent,
-								createdAt: new Date().toISOString(),
-							}];
-							chatStreamingContent = '';
-							chatStreaming = false;
-						}
-						if (event.type === 'error') {
-							chatStreamingContent += `\n\nError: ${event.error}`;
-							chatStreaming = false;
-						}
-					} catch { /* skip */ }
+						handleChatEvent(JSON.parse(line.slice(6)));
+					} catch { /* skip malformed */ }
 				}
 			}
-		} catch {
+		} catch (err) {
+			if ((err as Error).name !== 'AbortError') {
+				chatStreamingContent += `\n\n_Error: ${(err as Error).message}_`;
+			}
+		} finally {
 			chatStreaming = false;
+			chatAbortController = null;
+			// Reload from the server to pick up the persisted assistant turns
+			// (with full parts: thinking, tool_use, tool_result).
+			try {
+				const res = await fetch(`/api/chats/${chatId}/messages`);
+				if (res.ok) chatMessages = await res.json();
+			} catch { /* offline */ }
 			chatStreamingContent = '';
+			chatLiveThinkingBlocks = [];
+			chatLiveThinkingCurrent = '';
+			chatLiveTools = [];
 		}
+	}
+
+	function handleChatEvent(event: { type: string; [k: string]: unknown }) {
+		switch (event.type) {
+			case 'text':
+				chatStreamingContent += event.text as string;
+				break;
+			case 'thinking_delta':
+				chatLiveThinkingCurrent += event.text as string;
+				break;
+			case 'thinking_done':
+				if (chatLiveThinkingCurrent) {
+					chatLiveThinkingBlocks = [...chatLiveThinkingBlocks, chatLiveThinkingCurrent];
+					chatLiveThinkingCurrent = '';
+				}
+				break;
+			case 'tool_start':
+				chatLiveTools = [
+					...chatLiveTools,
+					{
+						id: event.id as string,
+						name: event.tool as string,
+						input: '',
+						isLocal: true,
+					},
+				];
+				break;
+			case 'tool_input_delta':
+				if (chatLiveTools.length > 0) {
+					const last = chatLiveTools[chatLiveTools.length - 1];
+					chatLiveTools = [
+						...chatLiveTools.slice(0, -1),
+						{ ...last, input: last.input + (event.text as string) },
+					];
+				}
+				break;
+			case 'tool_stop':
+				if (chatLiveTools.length > 0) {
+					const last = chatLiveTools[chatLiveTools.length - 1];
+					chatLiveTools = [...chatLiveTools.slice(0, -1), { ...last, done: true }];
+				}
+				break;
+			case 'tool_result': {
+				const toolUseId = event.toolUseId as string;
+				chatLiveTools = chatLiveTools.map((t) =>
+					t.id === toolUseId
+						? {
+								...t,
+								result: event.output as string,
+								isError: (event.isError as boolean) ?? false,
+								done: true,
+						  }
+						: t
+				);
+				break;
+			}
+			case 'error':
+				chatStreamingContent += `\n\n_Error: ${event.error}_`;
+				break;
+		}
+	}
+
+	function stopChatStreaming() {
+		chatAbortController?.abort();
 	}
 
 	const summaryHtml = $derived(paper?.summary ? marked(paper.summary) : '');
@@ -850,7 +971,7 @@
 										</svg>
 										<span class="chat-picker-label">
 											{#if paperChatId}
-												{chats.get(paperChatId)?.title ?? 'Chat'}
+												{chatLabel(chats.get(paperChatId))}
 											{:else}
 												Select chat
 											{/if}
@@ -870,7 +991,7 @@
 											{#each paperChats as pc (pc.id)}
 												<div class="chat-picker-item" class:active={pc.id === paperChatId}>
 													<button class="chat-picker-select" onclick={() => selectPaperChat(pc.id)}>
-														{pc.title}
+														{chatLabel(pc)}
 													</button>
 													<button class="chat-picker-delete" onclick={(e: MouseEvent) => { e.stopPropagation(); deletePaperChat(pc.id); }} title="Delete">
 														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -887,13 +1008,26 @@
 								</div>
 							</div>
 							{#if paperChatId}
-								<ChatMessages messages={chatMessages} isStreaming={chatStreaming} streamingContent={chatStreamingContent} />
+								<MessageStream
+									messages={chatMessages}
+									isStreaming={chatStreaming}
+									streamingText={chatStreamingContent}
+									liveThinkingBlocks={chatLiveThinkingBlocks}
+									liveThinkingCurrent={chatLiveThinkingCurrent}
+									liveTools={chatLiveTools}
+									compact
+								/>
 							{:else}
 								<div class="chat-empty">
-									<p>Start a new chat about this paper</p>
+									<p>A new conversation begins<br />when you ask the first question.</p>
 								</div>
 							{/if}
-							<ChatInput onsend={sendChatMessage} disabled={chatStreaming} />
+							<ChatComposer
+								isStreaming={chatStreaming}
+								onsend={sendChatMessage}
+								onstop={stopChatStreaming}
+								compact
+							/>
 						</div>
 
 					{:else if activeTab === 'notes'}
@@ -1897,7 +2031,11 @@
 		align-items: center;
 		justify-content: center;
 		color: var(--text-tertiary);
-		font-size: 0.9rem;
+		font-family: var(--font-display);
+		font-style: italic;
+		font-size: 1rem;
+		padding: var(--sp-6);
+		text-align: center;
 	}
 
 	.notes-tab {

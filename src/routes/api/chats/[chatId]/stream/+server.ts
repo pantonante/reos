@@ -1,190 +1,135 @@
+import type { ChatMessage, ChatMessagePart } from '$lib/types';
 import { db } from '$lib/server/db';
 import { PDF_DIR } from '$lib/server/pdf-storage';
+import { runChatTurn, type ChatEvent } from '$lib/server/anthropic';
 import type { RequestHandler } from './$types';
-import { spawn } from 'child_process';
 import crypto from 'crypto';
 import path from 'path';
+import fs from 'fs';
 
+/**
+ * Native Claude Agent SDK chat streaming endpoint.
+ *
+ * Each turn opens a `query()` against the user's Claude Code session
+ * (resuming via `chat.claudeSessionId` if one already exists, otherwise
+ * starting a fresh one). The Agent SDK runs the agent loop, executes
+ * Re:OS-native MCP tools + WebSearch/WebFetch, and emits events that we
+ * forward as SSE in the existing wire format. After the loop finishes
+ * we persist the new user and assistant messages with their full content
+ * blocks (`parts`) so the chat UI can re-render thinking + tool cards on
+ * reload, and we save the (possibly new) Claude Code session id back to
+ * the chat row for the next turn's resume.
+ */
 export const POST: RequestHandler = async ({ request, params }) => {
-	const { message, paperId } = await request.json();
-	const chatId = params.chatId;
+	const body = await request.json();
+	const message: string = body.message;
+	const requestedPaperIds: string[] = [
+		...((body.paperIds as string[] | undefined) ?? []),
+		...(body.paperId ? [body.paperId as string] : []),
+	];
+	const chatId = params.chatId!;
 	const chat = db.getChat(chatId);
 
 	if (!chat) {
 		return new Response(JSON.stringify({ error: 'Chat not found' }), { status: 404 });
 	}
 
-	// Save user message
-	db.addChatMessage({
+	// Build the new user turn's content blocks. PDFs first (so prompt
+	// caching has the heavy stuff at the front of the prefix), then text.
+	const userBlocks: ChatMessagePart[] = [];
+	const seen = new Set<string>();
+	for (const pid of requestedPaperIds) {
+		if (!pid || seen.has(pid)) continue;
+		seen.add(pid);
+		const paper = db.getPaper(pid);
+		if (!paper) continue;
+		try {
+			const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
+			if (!fs.existsSync(pdfFullPath)) continue;
+			const pdfBytes = fs.readFileSync(pdfFullPath);
+			userBlocks.push({
+				type: 'document',
+				source: {
+					type: 'base64',
+					media_type: 'application/pdf',
+					data: pdfBytes.toString('base64'),
+				},
+				title: paper.title,
+			});
+		} catch {
+			// Couldn't read the PDF — skip it. The model can still use tools.
+		}
+	}
+	userBlocks.push({ type: 'text', text: message });
+
+	// Persist the user message immediately so it survives stream interruption.
+	const userMsg: ChatMessage = {
 		id: crypto.randomUUID(),
 		chatId,
 		role: 'user',
 		content: message,
+		parts: userBlocks,
 		createdAt: new Date().toISOString(),
-	});
-
-	// Update chat timestamp
+	};
+	db.addChatMessage(userMsg);
 	db.updateChat(chatId, { updatedAt: new Date().toISOString() });
 
-	// Build claude CLI args
-	const args = ['-p', '--output-format', 'stream-json', '--verbose', '--allowedTools', 'Read,Glob,Grep,WebFetch,WebSearch'];
-	if (chat.claudeSessionId) {
-		args.push('--resume', chat.claudeSessionId);
-	}
-
-	const child = spawn('claude', args, {
-		env: { ...process.env },
-		stdio: ['pipe', 'pipe', 'pipe'],
-	});
-
-	// If paperId is provided, prepend PDF context for the first message
-	let prompt = message;
-	if (paperId) {
-		const paper = db.getPaper(paperId);
-		if (paper) {
-			const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
-			prompt = `Read this pdf paper at "${pdfFullPath}". Title: "${paper.title}".\n\n${message}`;
-		}
-	}
-
-	child.stdin.write(prompt);
-	child.stdin.end();
-
 	const stream = new ReadableStream({
-		start(controller) {
-			let fullText = '';
-			let sessionId = chat.claudeSessionId;
-			let buffer = '';
-			let stderrOutput = '';
-
-			child.stderr.on('data', (chunk: Buffer) => {
-				stderrOutput += chunk.toString();
-			});
-
-			child.stdout.on('data', (chunk: Buffer) => {
-				buffer += chunk.toString();
-				const lines = buffer.split('\n');
-				// Keep the last potentially incomplete line in the buffer
-				buffer = lines.pop() || '';
-
-				for (const line of lines) {
-					if (!line.trim()) continue;
-					try {
-						const event = JSON.parse(line);
-						if (event.type === 'assistant' && event.message?.content) {
-							for (const block of event.message.content) {
-								if (block.type === 'text' && block.text) {
-									fullText += block.text;
-									controller.enqueue(
-										new TextEncoder().encode(
-											`data: ${JSON.stringify({ type: 'text', text: block.text })}\n\n`
-										)
-									);
-								}
-							}
-						}
-						// Handle streaming text deltas
-						if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-							fullText += event.delta.text;
-							controller.enqueue(
-								new TextEncoder().encode(
-									`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`
-								)
-							);
-						}
-						// Forward tool use events (WebSearch, WebFetch)
-						if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-							const toolName = event.content_block.name;
-							if (toolName === 'WebSearch' || toolName === 'WebFetch') {
-								controller.enqueue(
-									new TextEncoder().encode(
-										`data: ${JSON.stringify({ type: 'tool_start', tool: toolName, id: event.content_block.id })}\n\n`
-									)
-								);
-							}
-						}
-						if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
-							// Accumulate tool input for display
-							controller.enqueue(
-								new TextEncoder().encode(
-									`data: ${JSON.stringify({ type: 'tool_input_delta', text: event.delta.partial_json })}\n\n`
-								)
-							);
-						}
-						if (event.type === 'content_block_stop') {
-							controller.enqueue(
-								new TextEncoder().encode(
-									`data: ${JSON.stringify({ type: 'tool_stop' })}\n\n`
-								)
-							);
-						}
-						if (event.type === 'result') {
-							sessionId = event.session_id;
-							// Use result text as the canonical full response
-							if (event.result) {
-								fullText = event.result;
-							}
-						}
-					} catch {
-						// Skip malformed JSON lines
-					}
+		async start(controller) {
+			const encoder = new TextEncoder();
+			const emit = (event: ChatEvent) => {
+				try {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+				} catch {
+					// Controller closed (client disconnected) — ignore.
 				}
-			});
+			};
 
-			child.on('close', (code) => {
-				// Process any remaining buffer
-				if (buffer.trim()) {
-					try {
-						const event = JSON.parse(buffer);
-						if (event.type === 'result') {
-							sessionId = event.session_id;
-							if (event.result) fullText = event.result;
-						}
-					} catch { /* ignore */ }
-				}
+			try {
+				const result = await runChatTurn({
+					userMessageContent: userBlocks,
+					resumeSessionId: chat.claudeSessionId,
+					emit,
+					signal: request.signal,
+				});
 
-				// If CLI exited with error and no output, send error to client
-				if (code !== 0 && !fullText && stderrOutput) {
-					controller.enqueue(
-						new TextEncoder().encode(
-							`data: ${JSON.stringify({ type: 'error', error: stderrOutput.trim() })}\n\n`
-						)
-					);
-				}
-
-				// Save assistant message
-				if (fullText) {
+				// Persist the assistant turn (with reasoning + tool_use blocks
+				// in `parts` so the UI can re-render the full activity on reload).
+				if (result.assistantBlocks.length > 0) {
+					const text = result.assistantBlocks
+						.filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+						.map((b) => b.text)
+						.join('\n\n');
 					db.addChatMessage({
 						id: crypto.randomUUID(),
 						chatId,
 						role: 'assistant',
-						content: fullText,
+						content: text || result.text,
+						parts: result.assistantBlocks,
 						createdAt: new Date().toISOString(),
 					});
 				}
 
-				// Persist session ID for conversation continuity
-				if (sessionId && sessionId !== chat.claudeSessionId) {
+				// Save the (possibly new) Claude Code session id back to the
+				// chat row so the next turn can resume the same context.
+				if (result.sessionId && result.sessionId !== chat.claudeSessionId) {
 					db.updateChat(chatId, {
-						claudeSessionId: sessionId,
+						claudeSessionId: result.sessionId,
 						updatedAt: new Date().toISOString(),
 					});
+				} else {
+					db.updateChat(chatId, { updatedAt: new Date().toISOString() });
 				}
-
-				controller.enqueue(
-					new TextEncoder().encode(`data: ${JSON.stringify({ type: 'done', fullText })}\n\n`)
-				);
-				controller.close();
-			});
-
-			child.on('error', (err) => {
-				controller.enqueue(
-					new TextEncoder().encode(
-						`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`
-					)
-				);
-				controller.close();
-			});
+			} catch (err) {
+				const msg = (err as Error).message ?? 'Unknown error';
+				emit({ type: 'error', error: msg });
+			} finally {
+				try {
+					controller.close();
+				} catch {
+					// already closed
+				}
+			}
 		},
 	});
 
@@ -192,7 +137,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 		headers: {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',
-			'Connection': 'keep-alive',
+			Connection: 'keep-alive',
 		},
 	});
 };

@@ -10,6 +10,7 @@
 		{ href: '/threads', label: 'Threads', icon: 'threads' as const, badge: 0 },
 		{ href: '/library', label: 'Library', icon: 'library' as const, badge: 0 },
 		{ href: '/graph', label: 'Graph', icon: 'graph' as const, badge: 0 },
+		{ href: '/chat', label: 'Chat', icon: 'chat' as const, badge: 0 },
 	]);
 
 	function isActive(href: string): boolean {
@@ -74,6 +75,10 @@
 							<line x1="12" y1="8" x2="5" y2="16"/>
 							<line x1="12" y1="8" x2="19" y2="16"/>
 						</svg>
+					{:else if item.icon === 'chat'}
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+						</svg>
 					{/if}
 					{#if item.badge > 0}
 						<span class="nav-badge-dot">{item.badge}</span>
@@ -89,11 +94,13 @@
 
 	<div class="sidebar-footer">
 		<button class="search-trigger" onclick={() => ui.commandPaletteOpen = true} title={ui.sidebarCollapsed ? 'Search (⌘K)' : undefined}>
-			<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="11" cy="11" r="7"/>
-				<line x1="16.5" y1="16.5" x2="21" y2="21"/>
-			</svg>
-			<span class="search-label">Search…</span>
+			<span class="nav-icon">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="11" cy="11" r="7"/>
+					<line x1="16.5" y1="16.5" x2="21" y2="21"/>
+				</svg>
+			</span>
+			<span class="search-label">Search</span>
 			<kbd class="search-kbd">⌘K</kbd>
 		</button>
 	</div>
@@ -116,7 +123,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--sp-3);
-		padding: var(--sp-4) var(--sp-4) var(--sp-2);
+		padding: var(--sp-4) var(--sp-3) var(--sp-3);
 	}
 
 	.collapse-toggle {
@@ -124,8 +131,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		width: 32px;
-		height: 32px;
+		width: 36px;
+		height: 36px;
+		margin-left: -2px;
 		border-radius: var(--radius-sm);
 		color: var(--text-secondary);
 		transition: background var(--duration-fast), color var(--duration-fast);
@@ -138,9 +146,10 @@
 
 	.logo {
 		font-family: var(--font-display);
-		font-size: 1.3rem;
+		font-size: 1.35rem;
 		font-weight: 600;
 		letter-spacing: -0.03em;
+		line-height: 1;
 	}
 
 	.logo-mark {
@@ -224,33 +233,35 @@
 	}
 
 	.sidebar-footer {
-		padding: var(--sp-3);
+		padding: var(--sp-2) var(--sp-3) var(--sp-3);
+		border-top: 1px solid var(--border-subtle);
+		margin-top: var(--sp-2);
 	}
 
+	/* Search trigger uses the same flex geometry as a .nav-item so the
+	   icon and label align in the same column. */
 	.search-trigger {
 		display: flex;
 		align-items: center;
-		gap: var(--sp-2);
+		gap: var(--sp-3);
 		width: 100%;
-		padding: 7px var(--sp-3);
+		padding: var(--sp-2) var(--sp-3);
 		border-radius: var(--radius-sm);
-		border: 1px solid var(--border);
-		background: var(--bg-base);
 		color: var(--text-tertiary);
-		font-size: 0.82rem;
+		font-size: 0.9rem;
+		font-weight: 450;
 		font-family: var(--font-body);
 		cursor: pointer;
-		transition: border-color var(--duration-fast), background var(--duration-fast);
+		transition: all var(--duration-fast) var(--ease-out);
 	}
 
 	.search-trigger:hover {
-		border-color: var(--text-tertiary);
-		background: var(--bg-overlay);
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 
-	.search-icon {
-		flex-shrink: 0;
-		opacity: 0.6;
+	.search-trigger .nav-icon {
+		opacity: 0.85;
 	}
 
 	.search-label {
@@ -259,11 +270,12 @@
 	}
 
 	.search-kbd {
+		flex-shrink: 0;
 		font-family: var(--font-mono);
-		font-size: 0.65rem;
+		font-size: 0.62rem;
 		color: var(--text-tertiary);
-		background: var(--bg-raised);
-		padding: 1px 5px;
+		background: var(--bg-base);
+		padding: 2px 5px;
 		border-radius: 3px;
 		border: 1px solid var(--border);
 		line-height: 1.4;
@@ -283,7 +295,11 @@
 
 	.collapsed .sidebar-header {
 		justify-content: center;
-		padding: var(--sp-4) var(--sp-2) var(--sp-2);
+		padding: var(--sp-4) var(--sp-2) var(--sp-3);
+	}
+
+	.collapsed .collapse-toggle {
+		margin-left: 0;
 	}
 
 	.collapsed .nav-item {
@@ -296,23 +312,12 @@
 	}
 
 	.collapsed .sidebar-footer {
-		padding: var(--sp-2);
+		padding: var(--sp-2) var(--sp-2) var(--sp-3);
 	}
 
 	.collapsed .search-trigger {
 		justify-content: center;
-		padding: 7px;
-		border-color: transparent;
-		background: transparent;
-	}
-
-	.collapsed .search-trigger:hover {
-		background: var(--bg-hover);
-		border-color: transparent;
-	}
-
-	.collapsed .search-icon {
-		opacity: 0.8;
+		padding: var(--sp-2);
 	}
 
 	/* ── Tablet & Mobile (≤1024px) ── */
@@ -363,9 +368,7 @@
 
 		.sidebar.collapsed .search-trigger {
 			justify-content: flex-start;
-			padding: 7px var(--sp-3);
-			border-color: var(--border);
-			background: var(--bg-base);
+			padding: var(--sp-2) var(--sp-3);
 		}
 
 		.sidebar .collapse-toggle {
