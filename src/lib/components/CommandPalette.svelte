@@ -7,8 +7,100 @@
 
 	type Result = { type: string; label: string; sublabel: string; action: () => void };
 
+	function normalizeForSearch(input: string): string {
+		return input
+			.toLowerCase()
+			.normalize('NFKD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.replace(/[^a-z0-9]+/g, ' ')
+			.trim();
+	}
+
+	function tokenize(input: string): string[] {
+		return input ? input.split(/\s+/).filter(Boolean) : [];
+	}
+
+	function compact(input: string): string {
+		return input.replace(/\s+/g, '');
+	}
+
+	function tokenVariants(token: string): string[] {
+		const variants = new Set<string>([token]);
+
+		// Minimal stemming so plural/gerund queries still match base words.
+		if (token.endsWith('ies') && token.length > 4) variants.add(token.slice(0, -3) + 'y');
+		if (token.endsWith('es') && token.length > 4) variants.add(token.slice(0, -2));
+		if (token.endsWith('s') && token.length > 3) variants.add(token.slice(0, -1));
+		if (token.endsWith('ing') && token.length > 5) variants.add(token.slice(0, -3));
+
+		return [...variants].filter(v => v.length > 1);
+	}
+
+	function levenshteinWithin(a: string, b: string, maxDistance: number): boolean {
+		if (a === b) return true;
+		if (Math.abs(a.length - b.length) > maxDistance) return false;
+
+		const cols = b.length + 1;
+		let prev = new Array<number>(cols);
+		let curr = new Array<number>(cols);
+		for (let j = 0; j < cols; j++) prev[j] = j;
+
+		for (let i = 1; i <= a.length; i++) {
+			curr[0] = i;
+			for (let j = 1; j < cols; j++) {
+				const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+				curr[j] = Math.min(
+					prev[j] + 1,
+					curr[j - 1] + 1,
+					prev[j - 1] + cost
+				);
+			}
+			[prev, curr] = [curr, prev];
+		}
+
+		return prev[b.length] <= maxDistance;
+	}
+
+	function tokenMatches(token: string, normalizedText: string, compactText: string, words: string[]): boolean {
+		const variants = tokenVariants(token);
+
+		for (const v of variants) {
+			if (normalizedText.includes(v) || compactText.includes(v)) return true;
+		}
+
+		// Lightweight fuzzy fallback for longer terms only.
+		if (token.length < 5) return false;
+		const maxDistance = token.length >= 9 ? 2 : 1;
+		for (const v of variants) {
+			for (const w of words) {
+				if (levenshteinWithin(w, v, maxDistance)) return true;
+			}
+		}
+
+		return false;
+	}
+
+	function matchesQuery(texts: string[], normalizedQuery: string, queryTokens: string[]): boolean {
+		if (queryTokens.length === 0) return true;
+
+		const normalizedText = normalizeForSearch(texts.join(' '));
+		if (!normalizedText) return false;
+
+		if (normalizedText.includes(normalizedQuery)) return true;
+
+		const compactQuery = compact(normalizedQuery);
+		const compactText = compact(normalizedText);
+		if (compactQuery && compactText.includes(compactQuery)) return true;
+
+		const words = tokenize(normalizedText);
+		return queryTokens.every(token => tokenMatches(token, normalizedText, compactText, words));
+	}
+
 	const results = $derived.by(() => {
-		const q = query.toLowerCase().trim();
+		const rawQuery = query.trim();
+		const fullTextMode = rawQuery.startsWith('/');
+		const normalizedQuery = normalizeForSearch(fullTextMode ? rawQuery.slice(1) : rawQuery);
+		const queryTokens = tokenize(normalizedQuery);
 		const items: Result[] = [];
 
 		// Navigation commands
@@ -22,14 +114,14 @@
 		];
 
 		for (const n of nav) {
-			if (!q || n.label.toLowerCase().includes(q) || n.sublabel.toLowerCase().includes(q)) {
+			if (matchesQuery([n.label, n.sublabel], normalizedQuery, queryTokens)) {
 				items.push({ type: 'nav', ...n });
 			}
 		}
 
 		// Threads (prioritized so "go to specific thread by name" is reliable)
 		for (const t of threads.items) {
-			if (!q || t.title.toLowerCase().includes(q) || t.question.toLowerCase().includes(q)) {
+			if (matchesQuery([t.title, t.question], normalizedQuery, queryTokens)) {
 				items.push({
 					type: 'thread',
 					label: t.title,
@@ -41,7 +133,16 @@
 
 		// Papers
 		for (const p of papers.items) {
-			if (!q || p.title.toLowerCase().includes(q) || p.authors.some(a => a.toLowerCase().includes(q)) || p.arxivId.includes(q)) {
+			const matchesPaperCore = matchesQuery(
+				[p.title, p.authors.join(' '), p.arxivId],
+				normalizedQuery,
+				queryTokens
+			);
+			const matchesPaperFullText =
+				fullTextMode &&
+				matchesQuery([p.abstract, p.summary ?? ''], normalizedQuery, queryTokens);
+
+			if (matchesPaperCore || matchesPaperFullText) {
 				items.push({
 					type: 'paper',
 					label: p.title,
@@ -100,7 +201,7 @@
 			<input
 				type="text"
 				class="palette-input"
-				placeholder="Search papers, threads, commands…"
+				placeholder="Search papers, threads, commands… (/ for full text)"
 				bind:value={query}
 				autofocus
 			/>
