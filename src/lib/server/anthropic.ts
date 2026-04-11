@@ -53,6 +53,8 @@ export interface ChatTurnInput {
 	userMessageContent: ChatMessagePart[];
 	/** Existing Claude Code session id to resume, if any. */
 	resumeSessionId?: string | null;
+	/** Optional per-turn context appended to the system prompt. */
+	additionalSystemContext?: string;
 	emit: (event: ChatEvent) => void;
 	signal?: AbortSignal;
 }
@@ -190,6 +192,7 @@ function blocksToParts(blocks: AssistantContentBlock[]): ChatMessagePart[] {
 export async function runChatTurn({
 	userMessageContent,
 	resumeSessionId,
+	additionalSystemContext,
 	emit,
 	signal,
 }: ChatTurnInput): Promise<ChatTurnResult> {
@@ -216,7 +219,9 @@ export async function runChatTurn({
 	}
 
 	const options: Options = {
-		systemPrompt: SYSTEM_PROMPT,
+		systemPrompt: additionalSystemContext
+			? `${SYSTEM_PROMPT}\n\n${additionalSystemContext}`
+			: SYSTEM_PROMPT,
 		model: MODEL,
 		thinking: { type: 'adaptive' },
 		// Built-in tools we want enabled. Everything else (Bash, Edit, Write,

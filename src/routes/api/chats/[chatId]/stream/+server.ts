@@ -7,6 +7,8 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 
+const MAX_ATTACHABLE_PDF_BYTES = 14 * 1024 * 1024;
+
 /**
  * Native Claude Agent SDK chat streaming endpoint.
  *
@@ -37,15 +39,38 @@ export const POST: RequestHandler = async ({ request, params }) => {
 	// Build the new user turn's content blocks. PDFs first (so prompt
 	// caching has the heavy stuff at the front of the prefix), then text.
 	const userBlocks: ChatMessagePart[] = [];
+	const fallbackPaperContexts: string[] = [];
 	const seen = new Set<string>();
 	for (const pid of requestedPaperIds) {
 		if (!pid || seen.has(pid)) continue;
 		seen.add(pid);
 		const paper = db.getPaper(pid);
 		if (!paper) continue;
+
+		const contextLines = [
+			`Title: ${paper.title}`,
+			`ArXiv ID: ${paper.arxivId}`,
+			`Authors: ${paper.authors.join(', ')}`,
+			`Abstract: ${paper.abstract}`,
+		];
+
 		try {
 			const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
-			if (!fs.existsSync(pdfFullPath)) continue;
+			if (!fs.existsSync(pdfFullPath)) {
+				fallbackPaperContexts.push(
+					`Attachment status: Missing local PDF at ${pdfFullPath}\n${contextLines.join('\n')}`
+				);
+				continue;
+			}
+			const pdfStats = fs.statSync(pdfFullPath);
+			if (pdfStats.size > MAX_ATTACHABLE_PDF_BYTES) {
+				const sizeMb = (pdfStats.size / (1024 * 1024)).toFixed(1);
+				const limitMb = (MAX_ATTACHABLE_PDF_BYTES / (1024 * 1024)).toFixed(0);
+				fallbackPaperContexts.push(
+					`Attachment status: PDF too large to inline (${sizeMb} MB > ${limitMb} MB safe upload cap)\n${contextLines.join('\n')}`
+				);
+				continue;
+			}
 			const pdfBytes = fs.readFileSync(pdfFullPath);
 			userBlocks.push({
 				type: 'document',
@@ -58,9 +83,21 @@ export const POST: RequestHandler = async ({ request, params }) => {
 			});
 		} catch {
 			// Couldn't read the PDF — skip it. The model can still use tools.
+			fallbackPaperContexts.push(
+				`Attachment status: Failed to read local PDF bytes\n${contextLines.join('\n')}`
+			);
 		}
 	}
 	userBlocks.push({ type: 'text', text: message });
+
+	const additionalSystemContext =
+		fallbackPaperContexts.length > 0
+			? [
+					'One or more selected paper PDFs could not be attached for this turn.',
+					'Briefly disclose this to the user, then continue using the fallback metadata below and available tools.',
+					...fallbackPaperContexts.map((ctx, i) => `Fallback paper context ${i + 1}:\n${ctx}`),
+			  ].join('\n\n')
+			: undefined;
 
 	// Persist the user message immediately so it survives stream interruption.
 	const userMsg: ChatMessage = {
@@ -89,6 +126,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 				const result = await runChatTurn({
 					userMessageContent: userBlocks,
 					resumeSessionId: chat.claudeSessionId,
+					additionalSystemContext,
 					emit,
 					signal: request.signal,
 				});
@@ -121,8 +159,25 @@ export const POST: RequestHandler = async ({ request, params }) => {
 					db.updateChat(chatId, { updatedAt: new Date().toISOString() });
 				}
 			} catch (err) {
-				const msg = (err as Error).message ?? 'Unknown error';
+				const raw = (err as Error).message ?? 'Unknown error';
+				const msg = /Request too large \(max 20MB\)/i.test(raw)
+					? `${raw} The selected PDF is too large to attach in one request.`
+					: raw;
 				emit({ type: 'error', error: msg });
+				const now = new Date().toISOString();
+				try {
+					db.addChatMessage({
+						id: crypto.randomUUID(),
+						chatId,
+						role: 'assistant',
+						content: `Error: ${msg}`,
+						parts: [{ type: 'text', text: `_Error: ${msg}_` }],
+						createdAt: now,
+					});
+					db.updateChat(chatId, { updatedAt: now });
+				} catch {
+					// best-effort persistence for stream errors
+				}
 			} finally {
 				try {
 					controller.close();
