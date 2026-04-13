@@ -22,6 +22,7 @@
 			id: `c${Date.now()}`,
 			title: 'New chat',
 			claudeSessionId: null,
+			chatEngine: 'sdk' as const,
 			paperId: null,
 			createdAt: now,
 			updatedAt: now,

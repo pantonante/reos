@@ -8,6 +8,7 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const chat = await request.json();
+	if (!chat.chatEngine) chat.chatEngine = 'sdk';
 	db.addChat(chat);
 	return json(chat, { status: 201 });
 };

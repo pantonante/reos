@@ -6,6 +6,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ChatMessagePart } from '$lib/types';
 import { reosMcpServer, displayToolName } from './chat-tools';
+import { composeChatSystemPrompt } from './chat-system-prompt';
 
 /**
  * Server-side wrapper around the Claude Agent SDK for the chat surface.
@@ -23,19 +24,6 @@ import { reosMcpServer, displayToolName } from './chat-tools';
  */
 
 const MODEL = 'claude-opus-4-6';
-
-const SYSTEM_PROMPT = `You are the Re:OS research assistant — an AI partner for an academic researcher who organizes papers into "threads" (ongoing investigations).
-
-You have direct, read-only access to the user's local paper library, threads, annotations, and notes through the Re:OS tools (search_papers, get_paper, list_threads, get_thread, list_annotations, list_notes). When the user asks anything about their library, prefer calling these tools over guessing. The user may also attach a paper PDF directly to the conversation; when they do, read it carefully before answering.
-
-You can also search and fetch the public web with WebSearch and WebFetch — use these for new papers, recent results, or context outside the user's library.
-
-Style:
-- Be concrete and concise. Researchers value precision over hedging.
-- When you cite a paper from the library, include its title and arxivId so the user can navigate to it.
-- When you cite the web, use markdown links.
-- Use math notation in $...$ / $$...$$ when it helps.
-- If a question is genuinely ambiguous, ask one short clarifying question instead of guessing.`;
 
 export type ChatEvent =
 	| { type: 'text'; text: string }
@@ -219,9 +207,7 @@ export async function runChatTurn({
 	}
 
 	const options: Options = {
-		systemPrompt: additionalSystemContext
-			? `${SYSTEM_PROMPT}\n\n${additionalSystemContext}`
-			: SYSTEM_PROMPT,
+		systemPrompt: composeChatSystemPrompt(additionalSystemContext),
 		model: MODEL,
 		thinking: { type: 'adaptive' },
 		// Built-in tools we want enabled. Everything else (Bash, Edit, Write,

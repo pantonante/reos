@@ -103,6 +103,7 @@
 			id: `c${Date.now()}`,
 			title: chatNum === 1 ? 'Chat' : `Chat ${chatNum}`,
 			claudeSessionId: null,
+			chatEngine: 'sdk' as const,
 			paperId: page.params.id ?? null,
 			createdAt: now,
 			updatedAt: now,

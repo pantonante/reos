@@ -4,6 +4,10 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
+		"postinstall": "node scripts/ensure-better-sqlite3.mjs",
+		"predev": "node scripts/ensure-better-sqlite3.mjs",
+		"prebuild": "node scripts/ensure-better-sqlite3.mjs",
+		"prepreview": "node scripts/ensure-better-sqlite3.mjs",
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
@@ -27,6 +31,12 @@
 		"katex": "^0.16.44",
 		"marked": "^17.0.5",
 		"marked-katex-extension": "^5.1.7",
-		"pdfjs-dist": "^4.10.38"
+		"pdfjs-dist": "^4.10.38",
+		"zod": "^4.3.6"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"better-sqlite3"
+		]
 	}
 }

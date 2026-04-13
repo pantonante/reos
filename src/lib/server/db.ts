@@ -93,6 +93,7 @@ function initSchema(db: Database.Database) {
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
 			claudeSessionId TEXT,
+			chatEngine TEXT NOT NULL DEFAULT 'sdk',
 			paperId TEXT,
 			createdAt TEXT NOT NULL,
 			updatedAt TEXT NOT NULL
@@ -134,6 +135,9 @@ function initSchema(db: Database.Database) {
 	const chatColNames = chatCols.map(c => c.name);
 	if (!chatColNames.includes('paperId')) {
 		db.exec('ALTER TABLE chats ADD COLUMN paperId TEXT');
+	}
+	if (!chatColNames.includes('chatEngine')) {
+		db.exec("ALTER TABLE chats ADD COLUMN chatEngine TEXT NOT NULL DEFAULT 'sdk'");
 	}
 
 	// chat_messages migrations
@@ -424,8 +428,8 @@ export const db = {
 	},
 
 	addChat(chat: Chat) {
-		getDb().prepare('INSERT INTO chats (id, title, claudeSessionId, paperId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)').run(
-			chat.id, chat.title, chat.claudeSessionId, chat.paperId ?? null, chat.createdAt, chat.updatedAt
+		getDb().prepare('INSERT INTO chats (id, title, claudeSessionId, chatEngine, paperId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+			chat.id, chat.title, chat.claudeSessionId, chat.chatEngine ?? 'sdk', chat.paperId ?? null, chat.createdAt, chat.updatedAt
 		);
 	},
 
