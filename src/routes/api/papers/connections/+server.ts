@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { PDF_DIR } from '$lib/server/pdf-storage';
+import { PDF_DIR } from '$lib/server/paths';
+import { replaceConnectionsForPaper } from '$lib/server/write-through';
 import type { RequestHandler } from './$types';
 import type { PaperConnection } from '$lib/types';
 import { spawn } from 'child_process';
@@ -191,10 +192,7 @@ export const POST: RequestHandler = async ({ request }) => {
 							generatedAt: now,
 						}));
 
-					db.removeConnectionsForPaper(paperId);
-					if (connections.length > 0) {
-						db.addConnections(connections);
-					}
+					replaceConnectionsForPaper(paperId, connections);
 				} catch (err: any) {
 					send({ type: 'error', error: `Failed to parse connections: ${err.message}` });
 				}

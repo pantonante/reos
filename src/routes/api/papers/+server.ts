@@ -1,14 +1,16 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { readSummary } from '$lib/server/summary';
+import { readSummary as readLegacySummary } from '$lib/server/summary';
+import { canonicalArxivId, findThreadForPaper } from '$lib/server/write-through';
+import * as wt from '$lib/server/write-through';
+import { readPaperSummary } from '$lib/server/fs-store';
 import type { RequestHandler } from './$types';
-import fs from 'fs';
-import path from 'path';
-import { PDF_DIR } from '$lib/server/pdf-storage';
 
 function enrichWithSummary(paper: any) {
-	const arxivId = paper.arxivId || paper.id;
-	const cached = readSummary(arxivId);
+	const aid = paper.arxivId || paper.id;
+	const slug = paper.threadId ?? findThreadForPaper(paper.id);
+	const nested = slug ? readPaperSummary(slug, aid) : null;
+	const cached = nested ?? readLegacySummary(aid);
 	return {
 		...paper,
 		summary: cached?.summary ?? null,
@@ -23,27 +25,19 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const paper = await request.json();
-	db.addPaper(paper);
-	return json(paper, { status: 201 });
+	const stored = wt.addPaper(paper);
+	return json(stored, { status: 201 });
 };
 
 export const PUT: RequestHandler = async ({ request }) => {
 	const { id, summary, summaryDate, ...data } = await request.json();
-	// Ignore summary/summaryDate -- they live on disk now
-	db.updatePaper(id, data);
+	// summary/summaryDate live on disk; ignore them on update.
+	wt.updatePaper(id, data);
 	return json({ ok: true });
 };
 
 export const DELETE: RequestHandler = async ({ request }) => {
 	const { id } = await request.json();
-	const paper = db.getPaper(id);
-	if (paper) {
-		const arxivId = paper.arxivId || paper.id;
-		const pdfPath = path.join(PDF_DIR, `${arxivId}.pdf`);
-		const summaryPath = path.join(PDF_DIR, `${arxivId}.summary.md`);
-		try { fs.unlinkSync(pdfPath); } catch {}
-		try { fs.unlinkSync(summaryPath); } catch {}
-	}
-	db.removePaper(id);
+	wt.removePaper(id);
 	return json({ ok: true });
 };

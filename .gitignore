@@ -12,8 +12,10 @@ node_modules
 .DS_Store
 Thumbs.db
 
-# Database
+# Database (legacy location and future cache)
 /data
+.reos-cache.db
+.reos-cache.db-*
 
 # Env
 .env

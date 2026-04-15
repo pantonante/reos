@@ -21,6 +21,13 @@ export interface Paper {
 	links: string[]; // external URLs associated with this paper
 	summary: string | null; // AI-generated paper review (markdown)
 	summaryDate: string | null; // ISO date when summary was generated
+	/** Slug of the thread that owns this paper on disk. Optional on writes
+	 * from the client — server defaults to the inbox thread. */
+	threadId?: string;
+	/** Order within the owning thread. */
+	orderInThread?: number;
+	/** Per-thread note about why this paper is in the thread. */
+	contextNote?: string;
 }
 
 export interface ThreadPaper {
@@ -119,6 +126,9 @@ export interface Chat {
 	claudeSessionId: string | null;
 	chatEngine: 'sdk' | 'cli';
 	paperId: string | null;
+	/** Slug of the thread that owns this chat on disk. Optional on writes
+	 * from the client — server defaults to the inbox thread. */
+	threadId?: string | null;
 	createdAt: string;
 	updatedAt: string;
 	/**

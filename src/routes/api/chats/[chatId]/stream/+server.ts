@@ -1,12 +1,11 @@
 import type { Chat, ChatMessage, ChatMessagePart } from '$lib/types';
 import { db } from '$lib/server/db';
-import { PDF_DIR } from '$lib/server/pdf-storage';
+import * as wt from '$lib/server/write-through';
 import { runChatTurn, type ChatEvent } from '$lib/server/anthropic';
 import { runCliChatTurn } from '$lib/server/claude-cli';
 import { ensureCompressedPdf } from '$lib/server/pdf-compression';
 import type { RequestHandler } from './$types';
 import crypto from 'crypto';
-import path from 'path';
 import fs from 'fs';
 
 const MAX_ATTACHABLE_PDF_BYTES = 14 * 1024 * 1024;
@@ -70,14 +69,17 @@ export const POST: RequestHandler = async ({ request, params }) => {
 			`Abstract: ${paper.abstract}`,
 		];
 
-		const pdfFullPath = path.join(PDF_DIR, `${paper.arxivId || paper.id}.pdf`);
-		const cliContext = [...contextLines, `Local PDF path: ${pdfFullPath}`].join('\n');
+		const pdfFullPath = wt.resolvePdfPath(paper);
+		const cliContext = [
+			...contextLines,
+			`Local PDF path: ${pdfFullPath ?? '(missing)'}`,
+		].join('\n');
 		cliPaperContexts.push(cliContext);
 
 		try {
-			if (!fs.existsSync(pdfFullPath)) {
+			if (!pdfFullPath || !fs.existsSync(pdfFullPath)) {
 				fallbackPaperContexts.push(
-					`Attachment status: Missing local PDF at ${pdfFullPath}\n${contextLines.join('\n')}`
+					`Attachment status: Missing local PDF for ${paper.title}\n${contextLines.join('\n')}`
 				);
 				continue;
 			}
@@ -194,11 +196,11 @@ export const POST: RequestHandler = async ({ request, params }) => {
 		parts: userBlocks,
 		createdAt: now,
 	};
-	db.addChatMessage(userMsg);
+	wt.addChatMessage(userMsg);
 	if (useCliMode) {
-		db.updateChat(chatId, { chatEngine: 'cli', updatedAt: now });
+		wt.updateChat(chatId, { chatEngine: 'cli', updatedAt: now });
 	} else {
-		db.updateChat(chatId, { updatedAt: now });
+		wt.updateChat(chatId, { updatedAt: now });
 	}
 
 	const stream = new ReadableStream({
@@ -259,7 +261,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 						.filter((b): b is { type: 'text'; text: string } => b.type === 'text')
 						.map((b) => b.text)
 						.join('\n\n');
-					db.addChatMessage({
+					wt.addChatMessage({
 						id: crypto.randomUUID(),
 						chatId,
 						role: 'assistant',
@@ -280,7 +282,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 				if (result.sessionId && result.sessionId !== chat.claudeSessionId) {
 					updateData.claudeSessionId = result.sessionId;
 				}
-				db.updateChat(chatId, updateData);
+				wt.updateChat(chatId, updateData);
 			} catch (err) {
 				const raw = (err as Error).message ?? 'Unknown error';
 				const msg = /Request too large \(max 20MB\)/i.test(raw)
@@ -289,7 +291,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 				emit({ type: 'error', error: msg });
 				const now = new Date().toISOString();
 				try {
-					db.addChatMessage({
+					wt.addChatMessage({
 						id: crypto.randomUUID(),
 						chatId,
 						role: 'assistant',
@@ -297,7 +299,7 @@ export const POST: RequestHandler = async ({ request, params }) => {
 						parts: [{ type: 'text', text: `_Error: ${msg}_` }],
 						createdAt: now,
 					});
-					db.updateChat(chatId, { updatedAt: now });
+					wt.updateChat(chatId, { updatedAt: now });
 				} catch {
 					// best-effort persistence for stream errors
 				}

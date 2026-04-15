@@ -2,9 +2,31 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import type { Paper, Thread, Annotation, Note, ThreadPaper, ThreadLink, Chat, ChatMessage, PaperConnection } from '$lib/types';
+import {
+	ensureInboxThread,
+	listChatDirs,
+	listPaperDirs,
+	listThreadDirs,
+	readAnnotations as fsReadAnnotations,
+	readChat as fsReadChat,
+	readChatMessages as fsReadChatMessages,
+	readConnections as fsReadConnections,
+	readNote as fsReadNote,
+	readPaper as fsReadPaper,
+	readThread as fsReadThread,
+	readThreadSynthesis,
+} from './fs-store';
 
 const DATA_DIR = path.resolve('data');
 const DB_PATH = path.join(DATA_DIR, 'reos.db');
+
+/**
+ * Bumped whenever the cache shape changes in a way that requires re-ingesting
+ * from the filesystem source of truth. `bootstrapCache()` compares this to the
+ * `_meta.schemaVersion` row and rebuilds if they differ (and the filesystem
+ * has real data to rebuild from).
+ */
+const SCHEMA_VERSION = 1;
 
 let _db: Database.Database | null = null;
 
@@ -121,6 +143,11 @@ function initSchema(db: Database.Database) {
 			FOREIGN KEY (toPaperId) REFERENCES papers(id) ON DELETE CASCADE,
 			UNIQUE(fromPaperId, toPaperId, connectionType)
 		);
+
+		CREATE TABLE IF NOT EXISTS _meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
 	`);
 
 	// Migrations for existing databases
@@ -128,6 +155,18 @@ function initSchema(db: Database.Database) {
 	const colNames = cols.map(c => c.name);
 	if (!colNames.includes('links')) {
 		db.exec("ALTER TABLE papers ADD COLUMN links TEXT NOT NULL DEFAULT '[]'");
+	}
+	// Thread-ownership columns on papers. Single-owned papers record their
+	// thread slug + position + per-thread context note directly on the row
+	// so the legacy `thread_papers` join is no longer load-bearing for reads.
+	if (!colNames.includes('threadId')) {
+		db.exec("ALTER TABLE papers ADD COLUMN threadId TEXT");
+	}
+	if (!colNames.includes('orderInThread')) {
+		db.exec("ALTER TABLE papers ADD COLUMN orderInThread INTEGER NOT NULL DEFAULT 0");
+	}
+	if (!colNames.includes('contextNote')) {
+		db.exec("ALTER TABLE papers ADD COLUMN contextNote TEXT NOT NULL DEFAULT ''");
 	}
 
 	// Chat migrations
@@ -139,6 +178,12 @@ function initSchema(db: Database.Database) {
 	if (!chatColNames.includes('chatEngine')) {
 		db.exec("ALTER TABLE chats ADD COLUMN chatEngine TEXT NOT NULL DEFAULT 'sdk'");
 	}
+	// Chats live inside a thread's folder. Nullable for now (legacy rows pre-
+	// migration have no thread); the migration script + rebuild-from-FS both
+	// populate it.
+	if (!chatColNames.includes('threadId')) {
+		db.exec('ALTER TABLE chats ADD COLUMN threadId TEXT');
+	}
 
 	// chat_messages migrations
 	const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as { name: string }[];
@@ -146,6 +191,30 @@ function initSchema(db: Database.Database) {
 	if (!msgColNames.includes('parts')) {
 		db.exec('ALTER TABLE chat_messages ADD COLUMN parts TEXT');
 	}
+}
+
+function getMeta(d: Database.Database, key: string): string | null {
+	const row = d.prepare('SELECT value FROM _meta WHERE key = ?').get(key) as { value: string } | undefined;
+	return row?.value ?? null;
+}
+
+function setMeta(d: Database.Database, key: string, value: string): void {
+	d.prepare('INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)').run(key, value);
+}
+
+/**
+ * Returns true if `<PDF_DIR>/threads/` contains any thread folder with at
+ * least one paper subfolder, i.e. the filesystem layout is genuinely populated
+ * (not just the empty inbox shell we bootstrap on every startup). Used to
+ * decide whether an unrecognized `_meta.schemaVersion` warrants an automatic
+ * rebuild — we never want to silently wipe the legacy DB while migration is
+ * still pending.
+ */
+function filesystemHasRealData(): boolean {
+	for (const slug of listThreadDirs()) {
+		if (listPaperDirs(slug).length > 0) return true;
+	}
+	return false;
 }
 
 export const db = {
@@ -221,17 +290,21 @@ export const db = {
 		d.prepare('DELETE FROM papers WHERE id = ?').run(id);
 	},
 
-	// Threads
+	// Threads — paper membership + ordering is derived from the `papers`
+	// table (single-ownership, chronological by addedAt). The legacy
+	// `thread_papers` table is no longer consulted for reads.
 	getAllThreads(): Thread[] {
 		const d = getDb();
 		const rows = d.prepare('SELECT * FROM threads ORDER BY updatedAt DESC').all() as any[];
 		return rows.map(r => {
-			const papers = d.prepare('SELECT paperId, contextNote, "order" FROM thread_papers WHERE threadId = ? ORDER BY "order"').all(r.id) as ThreadPaper[];
+			const papers = d.prepare(
+				'SELECT id AS paperId, contextNote, 0 AS "order" FROM papers WHERE threadId = ? ORDER BY addedAt ASC',
+			).all(r.id) as ThreadPaper[];
 			const links = d.prepare('SELECT id, label, url FROM thread_links WHERE threadId = ?').all(r.id) as ThreadLink[];
 			return {
 				...r,
 				tags: JSON.parse(r.tags),
-				papers,
+				papers: papers.map((p, i) => ({ ...p, order: i })),
 				links,
 				parentThreadId: r.parentThreadId ?? null,
 			};
@@ -242,12 +315,14 @@ export const db = {
 		const d = getDb();
 		const r = d.prepare('SELECT * FROM threads WHERE id = ?').get(id) as any;
 		if (!r) return undefined;
-		const papers = d.prepare('SELECT paperId, contextNote, "order" FROM thread_papers WHERE threadId = ? ORDER BY "order"').all(id) as ThreadPaper[];
+		const papers = d.prepare(
+			'SELECT id AS paperId, contextNote, 0 AS "order" FROM papers WHERE threadId = ? ORDER BY addedAt ASC',
+		).all(id) as ThreadPaper[];
 		const links = d.prepare('SELECT id, label, url FROM thread_links WHERE threadId = ?').all(id) as ThreadLink[];
 		return {
 			...r,
 			tags: JSON.parse(r.tags),
-			papers,
+			papers: papers.map((p, i) => ({ ...p, order: i })),
 			links,
 			parentThreadId: r.parentThreadId ?? null,
 		};
@@ -483,5 +558,228 @@ export const db = {
 
 	removeConnectionsForPaper(paperId: string) {
 		getDb().prepare('DELETE FROM paper_connections WHERE fromPaperId = ? OR toPaperId = ?').run(paperId, paperId);
+	},
+
+	// ------------------------------------------------------------------
+	// Cache lifecycle
+	// ------------------------------------------------------------------
+
+	/**
+	 * Drop every cache row (preserving `_meta`) and re-ingest everything from
+	 * the filesystem source of truth under `PDF_DIR`. Runs in a single
+	 * transaction so the cache is never partially visible.
+	 *
+	 * Relies on `src/lib/server/fs-store.ts` for all disk I/O.
+	 */
+	rebuildCache() {
+		const d = getDb();
+		ensureInboxThread();
+
+		const tx = d.transaction(() => {
+			d.exec('DELETE FROM paper_connections');
+			d.exec('DELETE FROM chat_messages');
+			d.exec('DELETE FROM chats');
+			d.exec('DELETE FROM annotations');
+			d.exec('DELETE FROM notes');
+			d.exec('DELETE FROM thread_links');
+			d.exec('DELETE FROM thread_papers');
+			d.exec('DELETE FROM papers');
+			d.exec('DELETE FROM threads');
+
+			const insertThread = d.prepare(`
+				INSERT INTO threads (id, title, question, status, synthesis, parentThreadId, tags, createdAt, updatedAt)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`);
+			const insertThreadLink = d.prepare(`
+				INSERT INTO thread_links (id, threadId, label, url) VALUES (?, ?, ?, ?)
+			`);
+			const insertPaper = d.prepare(`
+				INSERT INTO papers (
+					id, arxivId, title, authors, abstract, publishedDate, categories,
+					tags, readingStatus, rating, pdfPath, arxivUrl, addedAt, citations,
+					links, threadId, orderInThread, contextNote
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`);
+			// thread_papers is still populated during Phase B so legacy callers
+			// keep working; Phase C will drop both the table and this insert.
+			const insertThreadPaper = d.prepare(`
+				INSERT INTO thread_papers (threadId, paperId, contextNote, "order") VALUES (?, ?, ?, ?)
+			`);
+			const insertNote = d.prepare(`
+				INSERT INTO notes (id, paperId, content, createdAt) VALUES (?, ?, ?, ?)
+			`);
+			const insertAnnotation = d.prepare(`
+				INSERT INTO annotations (id, paperId, threadId, type, content, selectedText, page, color, createdAt, linkedPaperId)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`);
+			const insertChat = d.prepare(`
+				INSERT INTO chats (id, title, claudeSessionId, chatEngine, paperId, threadId, createdAt, updatedAt)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`);
+			const insertMessage = d.prepare(`
+				INSERT INTO chat_messages (id, chatId, role, content, parts, createdAt)
+				VALUES (?, ?, ?, ?, ?, ?)
+			`);
+			const insertConnection = d.prepare(`
+				INSERT OR REPLACE INTO paper_connections (id, fromPaperId, toPaperId, connectionType, strength, explanation, generatedAt)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
+			`);
+
+			for (const slug of listThreadDirs()) {
+				const thread = fsReadThread(slug);
+				if (!thread) continue;
+
+				insertThread.run(
+					thread.id,
+					thread.title,
+					thread.question,
+					thread.status,
+					readThreadSynthesis(slug),
+					thread.parentThreadId,
+					JSON.stringify(thread.tags),
+					thread.createdAt,
+					thread.updatedAt,
+				);
+				for (const link of thread.links) {
+					insertThreadLink.run(link.id, slug, link.label, link.url);
+				}
+
+				// Paper membership is whatever's on disk; order is chronological
+				// by `addedAt`. `thread_papers` is populated for legacy read
+				// paths but its `order` column is no longer authoritative.
+				for (const arxivId of listPaperDirs(slug)) {
+					const paper = fsReadPaper(slug, arxivId);
+					if (!paper) continue;
+					const pdfRel = path.posix.join('threads', slug, 'papers', arxivId, 'paper.pdf');
+
+					insertPaper.run(
+						paper.id,
+						paper.arxivId,
+						paper.title,
+						JSON.stringify(paper.authors),
+						paper.abstract,
+						paper.publishedDate,
+						JSON.stringify(paper.categories),
+						JSON.stringify(paper.tags),
+						paper.readingStatus,
+						paper.rating,
+						pdfRel,
+						paper.arxivUrl,
+						paper.addedAt,
+						JSON.stringify(paper.citations),
+						JSON.stringify(paper.links),
+						slug,
+						0,
+						paper.contextNote,
+					);
+					insertThreadPaper.run(slug, paper.id, paper.contextNote, 0);
+
+					const noteBody = fsReadNote(slug, arxivId);
+					if (noteBody.trim().length > 0) {
+						insertNote.run(`note-${paper.id}`, paper.id, noteBody, paper.addedAt);
+					}
+
+					for (const ann of fsReadAnnotations(slug, arxivId)) {
+						insertAnnotation.run(
+							ann.id,
+							paper.id,
+							slug,
+							ann.type,
+							ann.content,
+							ann.selectedText,
+							ann.page,
+							ann.color,
+							ann.createdAt,
+							ann.linkedPaperId ?? null,
+						);
+					}
+				}
+
+				for (const chatId of listChatDirs(slug)) {
+					const chat = fsReadChat(slug, chatId);
+					if (!chat) continue;
+					insertChat.run(
+						chat.id,
+						chat.title,
+						chat.claudeSessionId,
+						chat.chatEngine,
+						chat.paperId,
+						slug,
+						chat.createdAt,
+						chat.updatedAt,
+					);
+					for (const msg of fsReadChatMessages(slug, chatId)) {
+						insertMessage.run(
+							msg.id,
+							chatId,
+							msg.role,
+							msg.content,
+							msg.parts ? JSON.stringify(msg.parts) : null,
+							msg.createdAt,
+						);
+					}
+				}
+			}
+
+			for (const conn of fsReadConnections()) {
+				insertConnection.run(
+					conn.id,
+					conn.fromPaperId,
+					conn.toPaperId,
+					conn.connectionType,
+					conn.strength,
+					conn.explanation,
+					conn.generatedAt,
+				);
+			}
+
+			setMeta(d, 'schemaVersion', String(SCHEMA_VERSION));
+			setMeta(d, 'builtAt', new Date().toISOString());
+		});
+
+		tx();
+	},
+
+	/**
+	 * Called once per server startup. Guarantees the inbox thread exists on
+	 * disk and decides whether the cache needs a rebuild:
+	 *
+	 * - No prior `_meta.schemaVersion` row → first boot after this code lands;
+	 *   tag the existing cache with the current version and move on. Do NOT
+	 *   auto-rebuild, because pre-migration the filesystem has no thread/paper
+	 *   data — a rebuild would wipe the legacy DB content that's still the
+	 *   user's source of truth.
+	 * - Version matches `SCHEMA_VERSION` → nothing to do.
+	 * - Version mismatch AND filesystem has real data (i.e. migration has run
+	 *   or the user is running rebuild after external edits) → rebuild.
+	 * - Version mismatch and filesystem is effectively empty → just stamp the
+	 *   new version; the legacy cache remains authoritative until migration.
+	 */
+	bootstrapCache() {
+		const d = getDb();
+		ensureInboxThread();
+		const stored = getMeta(d, 'schemaVersion');
+		if (stored == null) {
+			setMeta(d, 'schemaVersion', String(SCHEMA_VERSION));
+			setMeta(d, 'builtAt', new Date().toISOString());
+			return;
+		}
+		if (stored === String(SCHEMA_VERSION)) return;
+
+		if (filesystemHasRealData()) {
+			console.log(`[cache] schema ${stored} → ${SCHEMA_VERSION}: rebuilding from filesystem`);
+			this.rebuildCache();
+		} else {
+			console.log(`[cache] schema ${stored} → ${SCHEMA_VERSION}: filesystem empty, preserving legacy DB`);
+			setMeta(d, 'schemaVersion', String(SCHEMA_VERSION));
+		}
+	},
+
+	getCacheMeta(): { schemaVersion: string | null; builtAt: string | null } {
+		const d = getDb();
+		return {
+			schemaVersion: getMeta(d, 'schemaVersion'),
+			builtAt: getMeta(d, 'builtAt'),
+		};
 	},
 };

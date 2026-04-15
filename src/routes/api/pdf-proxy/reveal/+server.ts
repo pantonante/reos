@@ -1,8 +1,8 @@
 import type { RequestHandler } from './$types';
 import { exec } from 'child_process';
 import fs from 'fs';
-import path from 'path';
-import { PDF_DIR } from '$lib/server/pdf-storage';
+import { db } from '$lib/server/db';
+import { resolvePdfPath } from '$lib/server/write-through';
 import { isLocalhost } from '$lib/server/localhost';
 
 export const GET: RequestHandler = async ({ url, getClientAddress }) => {
@@ -15,13 +15,14 @@ export const GET: RequestHandler = async ({ url, getClientAddress }) => {
 		return new Response('Missing id parameter', { status: 400 });
 	}
 
-	const filePath = path.join(PDF_DIR, `${arxivId}.pdf`);
+	const paper = db.getAllPapers().find((p) => (p.arxivId || p.id) === arxivId);
+	if (!paper) return new Response('Paper not found', { status: 404 });
 
-	if (!fs.existsSync(filePath)) {
+	const filePath = resolvePdfPath(paper);
+	if (!filePath || !fs.existsSync(filePath)) {
 		return new Response('PDF not found locally', { status: 404 });
 	}
 
 	exec(`open -R "${filePath}"`);
-
 	return new Response('OK', { status: 200 });
 };

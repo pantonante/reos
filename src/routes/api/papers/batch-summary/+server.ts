@@ -1,6 +1,14 @@
 import { db } from '$lib/server/db';
-import { PDF_DIR } from '$lib/server/pdf-storage';
-import { readSummary, writeSummary } from '$lib/server/summary';
+import { readPaperSummary } from '$lib/server/fs-store';
+import { readSummary as readLegacySummary } from '$lib/server/summary';
+import type { Paper } from '$lib/types';
+import {
+	canonicalArxivId,
+	findThreadForPaper,
+	resolvePdfPath,
+	resolvePdfWritePath,
+	writePaperSummary,
+} from '$lib/server/write-through';
 import type { RequestHandler } from './$types';
 import { exec } from 'child_process';
 import path from 'path';
@@ -8,26 +16,33 @@ import fs from 'fs';
 
 const MAX_CONCURRENCY = 3;
 
-async function downloadPdf(arxivId: string): Promise<boolean> {
-	const filePath = path.join(PDF_DIR, `${arxivId}.pdf`);
-	if (fs.existsSync(filePath)) return true;
+function summaryExists(paper: Paper): boolean {
+	const aid = canonicalArxivId(paper);
+	const slug = findThreadForPaper(paper.id);
+	if (slug && readPaperSummary(slug, aid)) return true;
+	return !!readLegacySummary(aid);
+}
+
+async function downloadPdf(paper: Paper): Promise<string | null> {
+	const existing = resolvePdfPath(paper);
+	if (existing && fs.existsSync(existing)) return existing;
 
 	try {
-		const pdfUrl = `https://arxiv.org/pdf/${encodeURIComponent(arxivId)}`;
+		const pdfUrl = `https://arxiv.org/pdf/${encodeURIComponent(canonicalArxivId(paper))}`;
 		const res = await fetch(pdfUrl);
-		if (!res.ok) return false;
+		if (!res.ok) return null;
 
 		const pdfBuffer = await res.arrayBuffer();
-		fs.mkdirSync(PDF_DIR, { recursive: true });
-		fs.writeFileSync(filePath, Buffer.from(pdfBuffer));
-		return true;
+		const target = resolvePdfWritePath(paper);
+		fs.mkdirSync(path.dirname(target), { recursive: true });
+		fs.writeFileSync(target, Buffer.from(pdfBuffer));
+		return target;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
-async function generateSummary(arxivId: string): Promise<string> {
-	const pdfPath = path.join(PDF_DIR, `${arxivId}.pdf`);
+async function generateSummary(pdfPath: string): Promise<string> {
 
 	const skillPath = path.resolve('.claude', 'skills', 'paper-reviewer', 'skill.md');
 	const raw = fs.readFileSync(skillPath, 'utf-8');
@@ -63,12 +78,7 @@ async function generateSummary(arxivId: string): Promise<string> {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const allPapers = db.getAllPapers();
-
-	// Filter to papers without summaries
-	const papersToProcess = allPapers.filter(p => {
-		const arxivId = p.arxivId || p.id;
-		return !readSummary(arxivId);
-	});
+	const papersToProcess = allPapers.filter((p) => !summaryExists(p));
 
 	const total = papersToProcess.length;
 	let completed = 0;
@@ -105,7 +115,6 @@ export const POST: RequestHandler = async ({ request }) => {
 					if (cancelled) return;
 
 					const paper = papersToProcess[index++];
-					const arxivId = paper.arxivId || paper.id;
 
 					try {
 						// Download PDF if needed
@@ -118,8 +127,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							total,
 						});
 
-						const hasPdf = await downloadPdf(arxivId);
-						if (!hasPdf) {
+						const pdfPath = await downloadPdf(paper);
+						if (!pdfPath) {
 							completed++;
 							failed++;
 							send({
@@ -146,8 +155,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							total,
 						});
 
-						const summary = await generateSummary(arxivId);
-						writeSummary(arxivId, summary);
+						const summary = await generateSummary(pdfPath);
+						writePaperSummary(paper.id, summary);
 
 						completed++;
 						succeeded++;
