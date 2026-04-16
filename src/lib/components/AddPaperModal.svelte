@@ -3,9 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { extractArxivId, fetchArxivPaper } from '$lib/arxiv';
 
-	type Mode = 'arxiv' | 'pdf';
-
-	let mode = $state<Mode>('arxiv');
 	let input = $state('');
 	let loading = $state(false);
 	let error = $state('');
@@ -14,6 +11,7 @@
 	// PDF upload state
 	let pdfFile = $state<File | null>(null);
 	let dragging = $state(false);
+	let dragDepth = 0;
 	let extracting = $state(false);
 	let extracted = $state(false);
 
@@ -41,6 +39,14 @@
 	function close() {
 		ui.addPaperOpen = false;
 		reset();
+	}
+
+	function isEmpty() {
+		return !input.trim() && !pdfFile && !extracted && !extracting;
+	}
+
+	function handleBackdropClick() {
+		if (isEmpty()) close();
 	}
 
 	// -- Arxiv flow --
@@ -82,33 +88,35 @@
 
 	// -- PDF upload flow --
 	function handleDragOver(e: DragEvent) {
+		// Required to allow drop. Also signal copy effect.
 		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+		if (!dragging) dragging = true;
+	}
+
+	function handleDragEnter(e: DragEvent) {
+		e.preventDefault();
+		dragDepth++;
 		dragging = true;
 	}
 
-	function handleDragLeave() {
-		dragging = false;
+	function handleDragLeave(e: DragEvent) {
+		e.preventDefault();
+		dragDepth = Math.max(0, dragDepth - 1);
+		if (dragDepth === 0) dragging = false;
 	}
 
 	function handleDrop(e: DragEvent) {
 		e.preventDefault();
 		dragging = false;
+		dragDepth = 0;
+		if (extracting || extracted) return;
 		const file = e.dataTransfer?.files[0];
 		if (file?.type === 'application/pdf') {
 			pdfFile = file;
 			extractMetadata(file);
-		} else {
+		} else if (file) {
 			error = 'Please drop a PDF file.';
-		}
-	}
-
-	function handleFileSelect(e: Event) {
-		const target = e.target as HTMLInputElement;
-		const file = target.files?.[0];
-		if (file) {
-			pdfFile = file;
-			error = '';
-			extractMetadata(file);
 		}
 	}
 
@@ -202,28 +210,66 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="modal-backdrop" onclick={close}>
+<div class="modal-backdrop" onclick={handleBackdropClick}>
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal" onclick={(e) => e.stopPropagation()}>
+	<div
+		class="modal"
+		onclick={(e) => e.stopPropagation()}
+		ondragenter={handleDragEnter}
+		ondragover={handleDragOver}
+		ondragleave={handleDragLeave}
+		ondrop={handleDrop}
+	>
 		<h2>Add Paper</h2>
 
-		<!-- Mode tabs -->
-		<div class="mode-tabs">
-			<button
-				class="mode-tab"
-				class:active={mode === 'arxiv'}
-				onclick={() => { mode = 'arxiv'; error = ''; }}
-			>Arxiv ID</button>
-			<button
-				class="mode-tab"
-				class:active={mode === 'pdf'}
-				onclick={() => { mode = 'pdf'; error = ''; }}
-			>Upload PDF</button>
-		</div>
+		{#if extracting}
+			<div class="extracting">
+				<div class="spinner"></div>
+				<p>Extracting metadata from PDF…</p>
+				<p class="extract-hint">This may take a moment</p>
+			</div>
+		{:else if extracted}
+			<!-- Extracted metadata - editable -->
+			<p class="subtitle">Review and edit extracted metadata</p>
+			<form onsubmit={e => { e.preventDefault(); handlePdfSubmit(); }}>
+				<div class="field">
+					<label for="meta-title">Title</label>
+					<input id="meta-title" type="text" bind:value={metaTitle} placeholder="Paper title" />
+				</div>
+				<div class="field">
+					<label for="meta-authors">Authors</label>
+					<input id="meta-authors" type="text" bind:value={metaAuthors} placeholder="Author 1, Author 2, …" />
+				</div>
+				<div class="field-row">
+					<div class="field">
+						<label for="meta-year">Year</label>
+						<input id="meta-year" type="text" bind:value={metaYear} placeholder="2024" />
+					</div>
+					<div class="field file-name">
+						<label>File</label>
+						<span class="mono">{pdfFile?.name}</span>
+					</div>
+				</div>
+				<div class="field">
+					<label for="meta-abstract">Abstract</label>
+					<textarea id="meta-abstract" bind:value={metaAbstract} placeholder="Paper abstract" rows="4"></textarea>
+				</div>
 
-		{#if mode === 'arxiv'}
-			<!-- Arxiv flow -->
+				{#if error}
+					<p class="error">{error}</p>
+				{/if}
+
+				<div class="actions">
+					<button type="button" class="btn-secondary" onclick={() => { extracted = false; pdfFile = null; error = ''; }}>Back</button>
+					<button type="button" class="btn-secondary" onclick={close}>Cancel</button>
+					<button type="submit" class="btn-primary" disabled={loading}>
+						{loading ? 'Adding…' : 'Add Paper'}
+					</button>
+				</div>
+			</form>
+		{:else}
+			<!-- Combined: paste link or drop PDF -->
 			<p class="subtitle">Paste an Arxiv ID or URL</p>
 			<form onsubmit={e => { e.preventDefault(); handleArxivSubmit(); }}>
 				<!-- svelte-ignore a11y_autofocus -->
@@ -246,6 +292,8 @@
 					</div>
 				{/if}
 
+				<div class="divider"><span>or drop a PDF anywhere</span></div>
+
 				<div class="actions">
 					<button type="button" class="btn-secondary" onclick={close}>Cancel</button>
 					<button type="submit" class="btn-primary" disabled={loading || !input.trim()}>
@@ -253,89 +301,18 @@
 					</button>
 				</div>
 			</form>
-		{:else}
-			<!-- PDF upload flow -->
-			{#if !extracted && !extracting}
-				<p class="subtitle">Drop a PDF or click to select</p>
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="drop-zone"
-					class:dragging
-					ondragover={handleDragOver}
-					ondragleave={handleDragLeave}
-					ondrop={handleDrop}
-					onclick={() => document.getElementById('pdf-file-input')?.click()}
-				>
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-						<polyline points="14 2 14 8 20 8"/>
-						<line x1="12" y1="18" x2="12" y2="12"/>
-						<polyline points="9 15 12 12 15 15"/>
-					</svg>
-					<span>Drop PDF here</span>
-					<span class="drop-hint">or click to browse</span>
-				</div>
-				<input
-					id="pdf-file-input"
-					type="file"
-					accept=".pdf,application/pdf"
-					style="display:none"
-					onchange={handleFileSelect}
-				/>
+		{/if}
 
-				{#if error}
-					<p class="error">{error}</p>
-				{/if}
-
-				<div class="actions">
-					<button type="button" class="btn-secondary" onclick={close}>Cancel</button>
-				</div>
-			{:else if extracting}
-				<div class="extracting">
-					<div class="spinner"></div>
-					<p>Extracting metadata from PDF…</p>
-					<p class="extract-hint">This may take a moment</p>
-				</div>
-			{:else}
-				<!-- Extracted metadata - editable -->
-				<p class="subtitle">Review and edit extracted metadata</p>
-				<form onsubmit={e => { e.preventDefault(); handlePdfSubmit(); }}>
-					<div class="field">
-						<label for="meta-title">Title</label>
-						<input id="meta-title" type="text" bind:value={metaTitle} placeholder="Paper title" />
-					</div>
-					<div class="field">
-						<label for="meta-authors">Authors</label>
-						<input id="meta-authors" type="text" bind:value={metaAuthors} placeholder="Author 1, Author 2, …" />
-					</div>
-					<div class="field-row">
-						<div class="field">
-							<label for="meta-year">Year</label>
-							<input id="meta-year" type="text" bind:value={metaYear} placeholder="2024" />
-						</div>
-						<div class="field file-name">
-							<label>File</label>
-							<span class="mono">{pdfFile?.name}</span>
-						</div>
-					</div>
-					<div class="field">
-						<label for="meta-abstract">Abstract</label>
-						<textarea id="meta-abstract" bind:value={metaAbstract} placeholder="Paper abstract" rows="4"></textarea>
-					</div>
-
-					{#if error}
-						<p class="error">{error}</p>
-					{/if}
-
-					<div class="actions">
-						<button type="button" class="btn-secondary" onclick={() => { extracted = false; pdfFile = null; error = ''; }}>Back</button>
-						<button type="button" class="btn-secondary" onclick={close}>Cancel</button>
-						<button type="submit" class="btn-primary" disabled={loading}>
-							{loading ? 'Adding…' : 'Add Paper'}
-						</button>
-					</div>
-				</form>
-			{/if}
+		{#if dragging && !extracting && !extracted}
+			<div class="drop-overlay">
+				<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+					<polyline points="14 2 14 8 20 8"/>
+					<line x1="12" y1="18" x2="12" y2="12"/>
+					<polyline points="9 15 12 12 15 15"/>
+				</svg>
+				<span>Drop PDF to upload</span>
+			</div>
 		{/if}
 	</div>
 </div>
@@ -355,6 +332,7 @@
 	}
 
 	.modal {
+		position: relative;
 		width: 520px;
 		max-width: 90vw;
 		max-height: 80vh;
@@ -372,31 +350,39 @@
 		margin-bottom: var(--sp-4);
 	}
 
-	.mode-tabs {
+	.divider {
 		display: flex;
-		gap: var(--sp-1);
-		margin-bottom: var(--sp-5);
-		border-bottom: 1px solid var(--border);
-		padding-bottom: 0;
-	}
-
-	.mode-tab {
-		padding: var(--sp-2) var(--sp-4);
-		font-size: 0.85rem;
-		font-weight: 500;
+		align-items: center;
+		gap: var(--sp-3);
+		margin: var(--sp-5) 0 var(--sp-2);
 		color: var(--text-secondary);
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-		transition: color var(--duration-fast), border-color var(--duration-fast);
+		font-size: 0.8rem;
 	}
 
-	.mode-tab:hover {
-		color: var(--text-primary);
+	.divider::before,
+	.divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: var(--border);
 	}
 
-	.mode-tab.active {
+	.drop-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: var(--sp-3);
+		background: var(--accent-muted);
+		border: 2px dashed var(--accent);
+		border-radius: var(--radius-lg);
 		color: var(--accent);
-		border-bottom-color: var(--accent);
+		font-size: 0.95rem;
+		font-weight: 500;
+		pointer-events: none;
+		z-index: 1;
 	}
 
 	.subtitle {
@@ -440,36 +426,6 @@
 
 	.link-btn:hover {
 		text-decoration: underline;
-	}
-
-	/* Drop zone */
-	.drop-zone {
-		border: 2px dashed var(--border);
-		border-radius: var(--radius-md);
-		padding: var(--sp-10) var(--sp-6);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--sp-2);
-		cursor: pointer;
-		transition: border-color var(--duration-fast), background var(--duration-fast);
-		color: var(--text-secondary);
-	}
-
-	.drop-zone:hover,
-	.drop-zone.dragging {
-		border-color: var(--accent);
-		background: var(--accent-muted);
-		color: var(--accent);
-	}
-
-	.drop-zone span {
-		font-size: 0.9rem;
-	}
-
-	.drop-hint {
-		font-size: 0.8rem !important;
-		opacity: 0.6;
 	}
 
 	/* Extracting state */
