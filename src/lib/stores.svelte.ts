@@ -75,6 +75,7 @@ export const connections = createStore<PaperConnection>([], '/api/papers/connect
 export const ui = (() => {
 	let commandPaletteOpen = $state(false);
 	let addPaperOpen = $state(false);
+	let newLitReviewOpen = $state(false);
 	let sidebarCollapsed = $state(
 		typeof localStorage !== 'undefined'
 			? localStorage.getItem('reos:sidebarCollapsed') !== 'false'
@@ -120,6 +121,8 @@ export const ui = (() => {
 		set batchSummaryOpen(v) { batchSummaryOpen = v; },
 		get addPaperOpen() { return addPaperOpen; },
 		set addPaperOpen(v) { addPaperOpen = v; },
+		get newLitReviewOpen() { return newLitReviewOpen; },
+		set newLitReviewOpen(v) { newLitReviewOpen = v; },
 		get sidebarCollapsed() { return sidebarCollapsed; },
 		set sidebarCollapsed(v) {
 			sidebarCollapsed = v;

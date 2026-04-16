@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import * as wt from '$lib/server/write-through';
+import { ensureWorkspace } from '$lib/server/workspace';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => {
@@ -10,6 +11,13 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
 	const thread = await request.json();
 	const stored = wt.addThread(thread);
+	if (stored.threadType === 'literature-review') {
+		try {
+			ensureWorkspace(stored.id, { installLitReviewSkill: true });
+		} catch (err) {
+			console.error('[threads] ensureWorkspace failed:', err);
+		}
+	}
 	return json(stored, { status: 201 });
 };
 

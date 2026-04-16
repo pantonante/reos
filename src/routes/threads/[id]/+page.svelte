@@ -2,9 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
+	import { marked } from 'marked';
 	import { threads, papers, annotations, notes, chats, ui } from '$lib/stores.svelte';
 	import AddPaperToThreadModal from '$lib/components/AddPaperToThreadModal.svelte';
 	import ConfirmDeleteModal from '$lib/components/ConfirmDeleteModal.svelte';
+	import ThreadTerminalDock from '$lib/components/ThreadTerminalDock.svelte';
 	import type { ThreadStatus, ReadingStatus } from '$lib/types';
 
 	// Register this thread as an open tab
@@ -13,7 +15,27 @@
 		if (id) untrack(() => ui.openThread(id));
 	});
 
-	let viewMode = $state<'timeline' | 'status' | 'matrix' | 'graph'>('timeline');
+	// Live updates: the server emits thread events when the literature-review
+	// watcher ingests a new report. We re-pull threads/papers so the UI shows
+	// the new synthesis + auto-added papers without a page reload.
+	$effect(() => {
+		const id = page.params.id;
+		if (!id || typeof window === 'undefined') return;
+		const source = new EventSource(`/api/threads/${id}/events`);
+		source.onmessage = async (ev) => {
+			try {
+				const data = JSON.parse(ev.data);
+				if (data?.type === 'thread:updated') await threads.reload();
+				if (data?.type === 'thread:papers-changed') {
+					await Promise.all([threads.reload(), papers.reload()]);
+				}
+			} catch { /* ignore malformed */ }
+		};
+		return () => source.close();
+	});
+
+	let viewMode = $state<'timeline' | 'status' | 'matrix' | 'graph' | 'synthesis'>('timeline');
+	let didInitialView = false;
 	let showAddPaper = $state(false);
 	let editingTitle = $state(false);
 	let titleInput = $state('');
@@ -109,6 +131,17 @@
 	}
 
 	const thread = $derived(threads.get(page.params.id));
+
+	$effect(() => {
+		if (!didInitialView && thread) {
+			didInitialView = true;
+			if (thread.threadType === 'literature-review') viewMode = 'synthesis';
+		}
+	});
+
+	function renderMarkdown(md: string): string {
+		return marked.parse(md, { async: false }) as string;
+	}
 
 	const threadPapers = $derived(
 		[...(thread?.papers ?? [])]
@@ -276,7 +309,8 @@
 {:else}
 	<div class="thread-layout" class:resizing={isResizing} style="--sidebar-w: {sidebarWidth}px">
 		<!-- Main content -->
-		<div class="thread-main">
+		<div class="thread-main has-terminal">
+			<div class="thread-main-scroll">
 			<header class="thread-header">
 				<div class="header-top-row">
 					<a href="/threads" class="back-link text-tertiary">← Threads</a>
@@ -317,7 +351,7 @@
 
 			<div class="view-bar">
 				<div class="view-tabs">
-					{#each ['timeline', 'status', 'matrix', 'graph'] as mode}
+					{#each ['timeline', 'status', 'matrix', 'graph', 'synthesis'] as mode}
 						<button
 							class="view-tab"
 							class:active={viewMode === mode}
@@ -377,8 +411,8 @@
 					{/if}
 				</div>
 
-				<!-- Synthesis section -->
-				<div class="synthesis-section" style="animation-delay: {timelineData.length * 50 + 120}ms">
+			{:else if viewMode === 'synthesis'}
+				<div class="synthesis-view">
 					<div class="synthesis-header">
 						<h3 class="synthesis-label mono">Synthesis</h3>
 						{#if !editingSynthesis}
@@ -391,7 +425,7 @@
 						<textarea
 							class="synthesis-textarea"
 							bind:value={synthesisInput}
-							rows="5"
+							rows="20"
 							placeholder="Your running summary or conclusion…"
 						></textarea>
 						<div class="synthesis-actions">
@@ -399,7 +433,9 @@
 							<button class="btn-small" onclick={saveSynthesis}>Save</button>
 						</div>
 					{:else if thread.synthesis}
-						<p class="synthesis-text">{thread.synthesis}</p>
+						<div class="synthesis-markdown">
+							{@html renderMarkdown(thread.synthesis)}
+						</div>
 					{:else}
 						<p class="synthesis-empty text-tertiary">No synthesis yet.</p>
 					{/if}
@@ -489,6 +525,11 @@
 					</div>
 				</div>
 			{/if}
+			</div>
+			<ThreadTerminalDock
+				threadId={thread.id}
+				hint={thread.threadType === 'literature-review' ? 'type /literature-review to start the workflow' : ''}
+			/>
 		</div>
 
 		<!-- Mobile sidebar toggle -->
@@ -674,7 +715,7 @@
 		grid-template-columns: 1fr 0px var(--sidebar-w, 280px);
 		gap: 0;
 		margin: calc(-1 * var(--sp-8));
-		height: 100vh;
+		height: calc(100% + var(--sp-8) * 2);
 		position: relative;
 	}
 
@@ -729,6 +770,29 @@
 		padding: var(--sp-8);
 		padding-right: var(--sp-10);
 	}
+
+	/* Literature-review threads: a compact scrollable strip on top for the
+	   thread header / synthesis / papers, then the terminal fills all
+	   remaining vertical and horizontal space. */
+	.thread-main.has-terminal {
+		overflow: hidden;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	.thread-main.has-terminal .thread-main-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+		padding: var(--sp-6) var(--sp-8);
+	}
+
+	.thread-main:not(.has-terminal) .thread-main-scroll {
+		display: contents;
+	}
+
 
 	.not-found {
 		text-align: center;
@@ -920,20 +984,16 @@
 	}
 
 	/* Synthesis */
-	.synthesis-section {
-		margin-top: var(--sp-6);
-		padding: var(--sp-5);
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		animation: slideUp var(--duration-slow) var(--ease-out) both;
+	.synthesis-view {
+		padding: var(--sp-2) 0 var(--sp-8);
+		animation: fadeIn var(--duration-slow) var(--ease-out) both;
 	}
 
 	.synthesis-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: var(--sp-3);
+		margin-bottom: var(--sp-4);
 	}
 
 	.synthesis-label {
@@ -951,10 +1011,110 @@
 
 	.edit-btn:hover { color: var(--accent); }
 
-	.synthesis-text {
-		font-size: 0.92rem;
-		line-height: 1.6;
+	.synthesis-markdown {
+		font-size: 0.95rem;
+		line-height: 1.65;
+		color: var(--text-primary);
+	}
+
+	.synthesis-markdown :global(h1),
+	.synthesis-markdown :global(h2),
+	.synthesis-markdown :global(h3),
+	.synthesis-markdown :global(h4) {
+		font-family: var(--font-display);
+		font-weight: 500;
+		letter-spacing: -0.02em;
+		margin-top: var(--sp-6);
+		margin-bottom: var(--sp-3);
+		color: var(--text-primary);
+	}
+
+	.synthesis-markdown :global(h1) { font-size: 1.6rem; }
+	.synthesis-markdown :global(h2) { font-size: 1.3rem; }
+	.synthesis-markdown :global(h3) { font-size: 1.08rem; }
+	.synthesis-markdown :global(h4) { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+
+	.synthesis-markdown :global(p) {
+		margin-bottom: var(--sp-4);
 		color: var(--text-secondary);
+	}
+
+	.synthesis-markdown :global(ul),
+	.synthesis-markdown :global(ol) {
+		margin: 0 0 var(--sp-4) var(--sp-5);
+		color: var(--text-secondary);
+	}
+
+	.synthesis-markdown :global(li) {
+		margin-bottom: var(--sp-2);
+		line-height: 1.6;
+	}
+
+	.synthesis-markdown :global(a) {
+		color: var(--accent);
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+		text-underline-offset: 2px;
+	}
+
+	.synthesis-markdown :global(a:hover) {
+		text-decoration-color: var(--accent);
+	}
+
+	.synthesis-markdown :global(code) {
+		font-family: var(--font-mono);
+		font-size: 0.85em;
+		background: var(--bg-raised);
+		padding: 1px 6px;
+		border-radius: 3px;
+		border: 1px solid var(--border);
+	}
+
+	.synthesis-markdown :global(pre) {
+		background: var(--bg-raised);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		padding: var(--sp-3) var(--sp-4);
+		overflow-x: auto;
+		margin-bottom: var(--sp-4);
+	}
+
+	.synthesis-markdown :global(pre code) {
+		background: none;
+		border: none;
+		padding: 0;
+	}
+
+	.synthesis-markdown :global(blockquote) {
+		border-left: 3px solid var(--accent);
+		padding-left: var(--sp-4);
+		margin: 0 0 var(--sp-4) 0;
+		color: var(--text-secondary);
+		font-style: italic;
+	}
+
+	.synthesis-markdown :global(hr) {
+		border: none;
+		border-top: 1px solid var(--border);
+		margin: var(--sp-6) 0;
+	}
+
+	.synthesis-markdown :global(table) {
+		border-collapse: collapse;
+		margin-bottom: var(--sp-4);
+		font-size: 0.88rem;
+	}
+
+	.synthesis-markdown :global(th),
+	.synthesis-markdown :global(td) {
+		border: 1px solid var(--border);
+		padding: var(--sp-2) var(--sp-3);
+		text-align: left;
+	}
+
+	.synthesis-markdown :global(th) {
+		background: var(--bg-raised);
+		font-weight: 500;
 	}
 
 	.synthesis-empty { font-size: 0.88rem; }
@@ -1244,7 +1404,7 @@
 		background: var(--bg-raised);
 		padding: var(--sp-6) var(--sp-5);
 		overflow-y: auto;
-		height: 100vh;
+		height: 100%;
 	}
 
 	.sb-header {

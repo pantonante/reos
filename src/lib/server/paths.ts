@@ -30,6 +30,25 @@ export function threadChatsDir(slug: string): string {
 	return path.join(threadDir(slug), 'chats');
 }
 
+// --- literature-review workspace paths ---
+// A workspace is the CWD we hand to the embedded `claude` CLI. The skill
+// writes its final report into `outputs/`, which the chokidar watcher scans.
+export function threadWorkspaceDir(slug: string): string {
+	return path.join(threadDir(slug), 'workspace');
+}
+
+export function threadOutputsDir(slug: string): string {
+	return path.join(threadWorkspaceDir(slug), 'outputs');
+}
+
+export function threadSkillsDir(slug: string): string {
+	return path.join(threadWorkspaceDir(slug), '.claude', 'skills');
+}
+
+export function threadClaudeSettingsPath(slug: string): string {
+	return path.join(threadWorkspaceDir(slug), '.claude', 'settings.json');
+}
+
 // --- paper-level paths (scoped to owning thread) ---
 export function paperDir(slug: string, arxivId: string): string {
 	return path.join(threadPapersDir(slug), arxivId);

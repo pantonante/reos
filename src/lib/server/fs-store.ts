@@ -7,6 +7,7 @@ import type {
 	ReadingStatus,
 	ThreadLink,
 	ThreadStatus,
+	ThreadType,
 } from '$lib/types';
 import {
 	CONNECTIONS_FILE,
@@ -48,6 +49,7 @@ export interface StoredThread {
 	createdAt: string;
 	updatedAt: string;
 	links: ThreadLink[];
+	threadType?: ThreadType;
 }
 
 /**
