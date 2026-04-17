@@ -41,10 +41,6 @@ export function threadOutputsDir(slug: string): string {
 	return path.join(threadWorkspaceDir(slug), 'outputs');
 }
 
-export function threadSkillsDir(slug: string): string {
-	return path.join(threadWorkspaceDir(slug), '.claude', 'skills');
-}
-
 export function threadClaudeSettingsPath(slug: string): string {
 	return path.join(threadWorkspaceDir(slug), '.claude', 'settings.json');
 }

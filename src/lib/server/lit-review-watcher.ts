@@ -3,8 +3,7 @@ import path from 'path';
 import chokidar from 'chokidar';
 import { THREADS_DIR } from './paths';
 import { db } from './db';
-import { appendThreadLinks, updateThread } from './write-through';
-import { addArxivPaperToThread } from './arxiv-ingest';
+import { updateThread, appendThreadLinks } from './write-through';
 import { parseReferences } from './lit-review-parser';
 import { threadEvents } from './thread-events';
 
@@ -63,10 +62,10 @@ function onFile(file: string): void {
 	const threadId = threadIdFromPath(file);
 	if (!threadId) return;
 
-	// Confirm the thread is actually a literature-review (defensive — skill can
-	// be run from any workspace but we only ingest when the thread is typed).
+	// Confirm the thread exists (no threadType restriction — any thread can
+	// have a literature review).
 	const thread = db.getThread(threadId);
-	if (!thread || thread.threadType !== 'literature-review') return;
+	if (!thread) return;
 
 	const prev = inflight.get(file);
 	if (prev?.timer) clearTimeout(prev.timer);
@@ -101,32 +100,28 @@ async function ingestFile(file: string, threadId: string): Promise<void> {
 
 		threadEvents.emitEvent({ type: 'lit-review:ingest-started', threadId });
 
+		// Update the thread synthesis with the full lit-review markdown.
 		updateThread(threadId, { synthesis: markdown });
 		threadEvents.emitEvent({ type: 'thread:updated', threadId });
 
-		const { arxivIds, links } = parseReferences(markdown);
+		// Parse references — but do NOT auto-import. The user selectively
+		// imports from the interactive synthesis view.
+		const { references } = parseReferences(markdown);
 
-		let added = 0;
-		for (const arxivId of arxivIds) {
-			try {
-				const result = await addArxivPaperToThread(arxivId, threadId);
-				if (result) added++;
-			} catch (err) {
-				console.error(`[lit-review-watcher] failed to add arxiv ${arxivId}:`, err);
-			}
-		}
-		if (added > 0) {
-			threadEvents.emitEvent({ type: 'thread:papers-changed', threadId });
+		// Append non-arxiv links to thread links (handy for the sidebar).
+		const externalLinks = references
+			.filter(r => r.type === 'external')
+			.map(r => ({ label: r.label, url: r.url }));
+		if (externalLinks.length) {
+			appendThreadLinks(threadId, externalLinks);
+			threadEvents.emitEvent({ type: 'thread:updated', threadId });
 		}
 
-		if (links.length) appendThreadLinks(threadId, links);
-		if (links.length) threadEvents.emitEvent({ type: 'thread:updated', threadId });
-
+		// Notify the UI that references are available for interactive import.
 		threadEvents.emitEvent({
-			type: 'lit-review:ingest-done',
+			type: 'synthesis:references-updated',
 			threadId,
-			arxivCount: added,
-			linkCount: links.length,
+			refCount: references.length,
 		});
 	} finally {
 		ingesting.delete(file);

@@ -6,7 +6,6 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import AddPaperModal from '$lib/components/AddPaperModal.svelte';
 	import BatchSummaryModal from '$lib/components/BatchSummaryModal.svelte';
-	import NewLitReviewModal from '$lib/components/NewLitReviewModal.svelte';
 	import { ui, papers, threads, annotations, notes, chats } from '$lib/stores.svelte';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -91,9 +90,6 @@
 	<BatchSummaryModal />
 {/if}
 
-{#if ui.newLitReviewOpen}
-	<NewLitReviewModal />
-{/if}
 
 <style>
 	.app-shell {

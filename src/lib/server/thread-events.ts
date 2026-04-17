@@ -4,7 +4,7 @@ export type ThreadEvent =
 	| { type: 'thread:updated'; threadId: string }
 	| { type: 'thread:papers-changed'; threadId: string }
 	| { type: 'lit-review:ingest-started'; threadId: string }
-	| { type: 'lit-review:ingest-done'; threadId: string; arxivCount: number; linkCount: number };
+	| { type: 'synthesis:references-updated'; threadId: string; refCount: number };
 
 class ThreadEventBus extends EventEmitter {
 	constructor() {

@@ -3,12 +3,8 @@ import path from 'path';
 import {
 	threadWorkspaceDir,
 	threadOutputsDir,
-	threadSkillsDir,
 	threadClaudeSettingsPath,
 } from './paths';
-// Vite `?raw` import — the skill text is bundled into the server build so we
-// don't depend on the source tree at runtime.
-import literatureReviewSkill from './skills/literature-review.md?raw';
 
 const DEFAULT_SETTINGS = {
 	permissions: {
@@ -29,11 +25,13 @@ function ensureDir(dir: string): void {
 /**
  * Idempotently prepare a thread's Claude Code workspace. Every thread gets
  * `workspace/`, `workspace/outputs/`, and a `.claude/settings.json` permissive
- * enough that terminal sessions don't stall on approval prompts. For
- * literature-review threads we additionally drop the bundled skill into
- * `.claude/skills/` so `/literature-review` is available.
+ * enough that terminal sessions don't stall on approval prompts.
+ *
+ * The `literature-review` skill is installed at the user level via
+ * `npm run install-skill` (see scripts/install-skill.mjs), so it's available
+ * in every workspace without per-thread duplication.
  */
-export function ensureWorkspace(slug: string, opts: { installLitReviewSkill?: boolean } = {}): void {
+export function ensureWorkspace(slug: string): void {
 	const workspace = threadWorkspaceDir(slug);
 	const outputs = threadOutputsDir(slug);
 	ensureDir(workspace);
@@ -43,14 +41,5 @@ export function ensureWorkspace(slug: string, opts: { installLitReviewSkill?: bo
 	if (!fs.existsSync(settingsPath)) {
 		ensureDir(path.dirname(settingsPath));
 		fs.writeFileSync(settingsPath, JSON.stringify(DEFAULT_SETTINGS, null, 2) + '\n', 'utf8');
-	}
-
-	if (opts.installLitReviewSkill) {
-		const skillsDir = threadSkillsDir(slug);
-		ensureDir(skillsDir);
-		const skillPath = path.join(skillsDir, 'literature-review.md');
-		if (!fs.existsSync(skillPath)) {
-			fs.writeFileSync(skillPath, literatureReviewSkill, 'utf8');
-		}
 	}
 }

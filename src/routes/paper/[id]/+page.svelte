@@ -453,40 +453,84 @@
 	}
 	let tagInput = $state('');
 
-	// Add-to-thread dropdown
-	let addThreadOpen = $state(false);
+	// Move-to-thread dropdown
+	let moveThreadOpen = $state(false);
 	let threadSearch = $state('');
-	let addThreadRef = $state<HTMLElement | null>(null);
-	const availableThreads = $derived(
-		threads.items.filter(t => !t.papers.some(tp => tp.paperId === page.params.id))
+	let moveThreadRef = $state<HTMLElement | null>(null);
+	let moving = $state(false);
+	const currentThread = $derived(paperThreads[0] ?? null);
+	const otherThreads = $derived(
+		threads.items.filter(t => t.id !== currentThread?.id)
 	);
 	const filteredThreads = $derived(
 		threadSearch
-			? availableThreads.filter(t => t.title.toLowerCase().includes(threadSearch.toLowerCase()))
-			: availableThreads
+			? otherThreads.filter(t => t.title.toLowerCase().includes(threadSearch.toLowerCase()))
+			: otherThreads
 	);
 
-	function addPaperToThread(threadId: string) {
-		const thread = threads.items.find(t => t.id === threadId);
-		if (!thread || !paper) return;
-		const updated = [...thread.papers, { paperId: paper.id, contextNote: '', order: thread.papers.length }];
-		threads.update(threadId, { papers: updated, updatedAt: new Date().toISOString() });
-		closeThreadDropdown();
+	async function movePaperToThread(toThreadId: string) {
+		if (!paper || moving) return;
+		const fromThreadId = currentThread?.id ?? paper.threadId ?? null;
+		if (fromThreadId === toThreadId) {
+			closeThreadDropdown();
+			return;
+		}
+		moving = true;
+		try {
+			const res = await fetch('/api/papers/move', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ paperId: paper.id, toThreadId }),
+			});
+			if (!res.ok) {
+				const { error } = await res.json().catch(() => ({ error: 'Move failed' }));
+				console.error('[move paper]', error);
+				return;
+			}
+			// Update local stores to reflect the move without a full reload.
+			papers.items = papers.items.map(p =>
+				p.id === paper.id ? { ...p, threadId: toThreadId } : p,
+			);
+			const now = new Date().toISOString();
+			threads.items = threads.items.map(t => {
+				if (t.id === fromThreadId) {
+					return {
+						...t,
+						papers: t.papers.filter(tp => tp.paperId !== paper.id),
+						updatedAt: now,
+					};
+				}
+				if (t.id === toThreadId) {
+					const already = t.papers.some(tp => tp.paperId === paper.id);
+					return {
+						...t,
+						papers: already
+							? t.papers
+							: [...t.papers, { paperId: paper.id, contextNote: '', order: t.papers.length }],
+						updatedAt: now,
+					};
+				}
+				return t;
+			});
+		} finally {
+			moving = false;
+			closeThreadDropdown();
+		}
 	}
 
 	function closeThreadDropdown() {
-		addThreadOpen = false;
+		moveThreadOpen = false;
 		threadSearch = '';
 	}
 
 	function onThreadDropdownClick(e: MouseEvent) {
-		if (addThreadRef && !addThreadRef.contains(e.target as Node)) {
+		if (moveThreadRef && !moveThreadRef.contains(e.target as Node)) {
 			closeThreadDropdown();
 		}
 	}
 
 	$effect(() => {
-		if (addThreadOpen) {
+		if (moveThreadOpen) {
 			document.addEventListener('click', onThreadDropdownClick, true);
 			return () => document.removeEventListener('click', onThreadDropdownClick, true);
 		}
@@ -998,31 +1042,40 @@
 								</div>
 							{/if}
 
-							<!-- Threads -->
+							<!-- Thread -->
 							<div class="field">
-								<label class="field-label mono">Threads</label>
+								<label class="field-label mono">Thread</label>
 								<div class="thread-tags">
-									{#each paperThreads as thread}
-										<a href="/threads/{thread.id}" class="thread-tag">
-											<span class="thread-tag-name">{thread.title}</span>
-											<span class="thread-tag-status mono">{thread.status}</span>
+									{#if currentThread}
+										<a href="/threads/{currentThread.id}" class="thread-tag">
+											<span class="thread-tag-name">{currentThread.title}</span>
+											<span class="thread-tag-status mono">{currentThread.status}</span>
 										</a>
-									{/each}
-									{#if availableThreads.length > 0}
-										<div class="add-thread-wrap" bind:this={addThreadRef}>
-											<button class="thread-tag add-thread-btn" onclick={() => { addThreadOpen = !addThreadOpen; threadSearch = ''; }}>+</button>
-											{#if addThreadOpen}
+									{:else}
+										<span class="field-value text-tertiary">No thread</span>
+									{/if}
+									{#if otherThreads.length > 0}
+										<div class="add-thread-wrap" bind:this={moveThreadRef}>
+											<button
+												class="thread-tag add-thread-btn"
+												title="Move to another thread"
+												disabled={moving}
+												onclick={() => { moveThreadOpen = !moveThreadOpen; threadSearch = ''; }}
+											>
+												{moving ? '…' : 'Move →'}
+											</button>
+											{#if moveThreadOpen}
 												<div class="add-thread-dropdown">
 													<input
 														type="text"
 														class="thread-search-input"
-														placeholder="Search threads…"
+														placeholder="Move to thread…"
 														bind:value={threadSearch}
 														autofocus
 													/>
 													<div class="add-thread-list">
 														{#each filteredThreads as t}
-															<button class="add-thread-option" onclick={() => addPaperToThread(t.id)}>
+															<button class="add-thread-option" onclick={() => movePaperToThread(t.id)}>
 																{t.title}
 																<span class="thread-tag-status mono">{t.status}</span>
 															</button>
@@ -1034,9 +1087,6 @@
 												</div>
 											{/if}
 										</div>
-									{/if}
-									{#if paperThreads.length === 0 && availableThreads.length === 0}
-										<span class="field-value text-tertiary">No threads</span>
 									{/if}
 								</div>
 							</div>

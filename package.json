@@ -15,7 +15,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"migrate-fs": "node scripts/migrate-to-fs.mjs",
-		"rebuild-cache": "node scripts/rebuild-cache.mjs"
+		"rebuild-cache": "node scripts/rebuild-cache.mjs",
+		"install-skill": "node scripts/install-skill.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",

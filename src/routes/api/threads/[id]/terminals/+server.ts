@@ -20,9 +20,7 @@ export const POST: RequestHandler = async ({ params }) => {
 	const thread = db.getThread(threadId);
 	if (!thread) return json({ error: 'thread not found' }, { status: 404 });
 
-	ensureWorkspace(threadId, {
-		installLitReviewSkill: thread.threadType === 'literature-review',
-	});
+	ensureWorkspace(threadId);
 
 	const terminalId = newTerminalId();
 	try {

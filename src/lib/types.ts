@@ -61,6 +61,20 @@ export interface Thread {
 	threadType?: ThreadType;
 }
 
+// --- Literature review references ---
+
+export interface ParsedReference {
+	arxivId: string | null;
+	label: string;
+	url: string;
+	type: 'arxiv' | 'external';
+}
+
+export interface AnnotatedReference extends ParsedReference {
+	imported: boolean;
+	paperId?: string;
+}
+
 export interface Annotation {
 	id: string;
 	paperId: string;

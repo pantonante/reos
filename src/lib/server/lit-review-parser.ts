@@ -1,8 +1,16 @@
 import { extractArxivId } from '$lib/arxiv';
 
+export interface ParsedReference {
+	arxivId: string | null;
+	label: string;
+	url: string;
+	type: 'arxiv' | 'external';
+}
+
 export interface ParsedReferences {
-	arxivIds: string[];
-	links: { label: string; url: string }[];
+	references: ParsedReference[];
+	/** Character offset in the original markdown where the first References/Bibliography heading starts. -1 if none found. */
+	referenceSectionStart: number;
 }
 
 // Match any markdown heading whose text contains "references" or "bibliograph*".
@@ -10,6 +18,23 @@ export interface ParsedReferences {
 // `# Bibliographic sources`, `# Bibliography`, etc.
 const REF_HEADING_RE = /^(#{1,6})\s+.*?(?:references?|bibliograph(?:y|ic|ical|ies)?).*$/gim;
 const URL_RE = /https?:\/\/[^\s\)\]<>"']+/i;
+const ARXIV_URL_RE = /https?:\/\/(?:arxiv\.org\/(?:abs|pdf)|export\.arxiv\.org\/(?:abs|pdf))\/[\w./-]+/i;
+
+/**
+ * Extract a human-readable label from a markdown reference line.
+ * Strips URLs, arxiv IDs, markdown link syntax, and trailing punctuation.
+ */
+function extractLabel(line: string): string {
+	return line
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')   // [text](url) → text
+		.replace(URL_RE, '')                          // strip URLs
+		.replace(/\(?arXiv:\s*\d{4}\.\d{4,5}(?:v\d+)?\)?/gi, '') // strip arXiv:XXXX.XXXXX
+		.replace(/\d{4}\.\d{4,5}(?:v\d+)?/g, '')     // strip bare arxiv IDs
+		.replace(/[[\]()]/g, '')                       // strip remaining brackets
+		.replace(/[-–—:,;\s]+$/, '')                   // trim trailing punctuation
+		.replace(/^[-–—:,;\s]+/, '')                   // trim leading punctuation
+		.trim();
+}
 
 /**
  * Pull structured refs out of the literature-review markdown. Scans every
@@ -19,11 +44,14 @@ const URL_RE = /https?:\/\/[^\s\)\]<>"']+/i;
 export function parseReferences(markdown: string): ParsedReferences {
 	const sections: string[] = [];
 	const matches = [...markdown.matchAll(REF_HEADING_RE)];
+	let referenceSectionStart = -1;
+
 	if (matches.length === 0) {
 		// Fallback: scan the whole doc. Better to over-capture than miss refs
 		// when the skill formatting drifts.
 		sections.push(markdown);
 	} else {
+		referenceSectionStart = matches[0].index ?? -1;
 		for (let i = 0; i < matches.length; i++) {
 			const m = matches[i];
 			const level = m[1].length;
@@ -37,9 +65,9 @@ export function parseReferences(markdown: string): ParsedReferences {
 		}
 	}
 
-	const arxivSet = new Set<string>();
-	const links: { label: string; url: string }[] = [];
-	const linkUrls = new Set<string>();
+	const references: ParsedReference[] = [];
+	const seenArxiv = new Set<string>();
+	const seenUrls = new Set<string>();
 
 	for (const section of sections) {
 		for (const rawLine of section.split(/\r?\n/)) {
@@ -49,24 +77,35 @@ export function parseReferences(markdown: string): ParsedReferences {
 			// Ignore bold pseudo-headings like `**Surveys / Reviews**`.
 			if (/^\*\*[^*]+\*\*\s*$/.test(line)) continue;
 
-			// arXiv hit → treat the whole line as a paper reference and skip
-			// extracting a link for it.
+			// arXiv hit → structured reference with label
 			const aid = extractArxivId(line);
 			if (aid) {
-				arxivSet.add(aid);
+				if (seenArxiv.has(aid)) continue;
+				seenArxiv.add(aid);
+				const label = extractLabel(line) || `arXiv:${aid}`;
+				references.push({
+					arxivId: aid,
+					label,
+					url: `https://arxiv.org/abs/${aid}`,
+					type: 'arxiv',
+				});
 				continue;
 			}
 
 			const url = line.match(URL_RE)?.[0];
 			if (!url) continue;
 			const normalized = url.replace(/[.,;\)\]]+$/, '');
-			if (linkUrls.has(normalized)) continue;
-			linkUrls.add(normalized);
-			const label =
-				line.replace(normalized, '').replace(/[-–—:\s]+$/, '').trim() || normalized;
-			links.push({ label, url: normalized });
+			if (seenUrls.has(normalized)) continue;
+			seenUrls.add(normalized);
+			const label = extractLabel(line) || normalized;
+			references.push({
+				arxivId: null,
+				label,
+				url: normalized,
+				type: 'external',
+			});
 		}
 	}
 
-	return { arxivIds: [...arxivSet], links };
+	return { references, referenceSectionStart };
 }

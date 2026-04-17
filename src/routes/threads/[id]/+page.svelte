@@ -7,7 +7,8 @@
 	import AddPaperToThreadModal from '$lib/components/AddPaperToThreadModal.svelte';
 	import ConfirmDeleteModal from '$lib/components/ConfirmDeleteModal.svelte';
 	import ThreadTerminalDock from '$lib/components/ThreadTerminalDock.svelte';
-	import type { ThreadStatus, ReadingStatus } from '$lib/types';
+	import InteractiveSynthesis from '$lib/components/InteractiveSynthesis.svelte';
+	import type { ThreadStatus, ReadingStatus, AnnotatedReference } from '$lib/types';
 
 	// Register this thread as an open tab
 	$effect(() => {
@@ -25,7 +26,9 @@
 		source.onmessage = async (ev) => {
 			try {
 				const data = JSON.parse(ev.data);
-				if (data?.type === 'thread:updated') await threads.reload();
+				if (data?.type === 'thread:updated' || data?.type === 'synthesis:references-updated') {
+					await threads.reload();
+				}
 				if (data?.type === 'thread:papers-changed') {
 					await Promise.all([threads.reload(), papers.reload()]);
 				}
@@ -135,7 +138,8 @@
 	$effect(() => {
 		if (!didInitialView && thread) {
 			didInitialView = true;
-			if (thread.threadType === 'literature-review') viewMode = 'synthesis';
+			// Default to synthesis view if the thread already has a synthesis
+			if (thread.synthesis?.trim()) viewMode = 'synthesis';
 		}
 	});
 
@@ -412,34 +416,15 @@
 				</div>
 
 			{:else if viewMode === 'synthesis'}
-				<div class="synthesis-view">
-					<div class="synthesis-header">
-						<h3 class="synthesis-label mono">Synthesis</h3>
-						{#if !editingSynthesis}
-							<button class="edit-btn" onclick={startEditSynthesis}>
-								{thread.synthesis ? 'Edit' : 'Write'}
-							</button>
-						{/if}
-					</div>
-					{#if editingSynthesis}
-						<textarea
-							class="synthesis-textarea"
-							bind:value={synthesisInput}
-							rows="20"
-							placeholder="Your running summary or conclusion…"
-						></textarea>
-						<div class="synthesis-actions">
-							<button class="btn-ghost" onclick={() => editingSynthesis = false}>Cancel</button>
-							<button class="btn-small" onclick={saveSynthesis}>Save</button>
-						</div>
-					{:else if thread.synthesis}
-						<div class="synthesis-markdown">
-							{@html renderMarkdown(thread.synthesis)}
-						</div>
-					{:else}
-						<p class="synthesis-empty text-tertiary">No synthesis yet.</p>
-					{/if}
-				</div>
+				<InteractiveSynthesis
+					{thread}
+					{editingSynthesis}
+					bind:synthesisInput
+					onStartEdit={startEditSynthesis}
+					onSave={saveSynthesis}
+					onCancelEdit={() => editingSynthesis = false}
+					onupload={(ref) => { showAddPaper = true; }}
+				/>
 
 			{:else if viewMode === 'status'}
 			<div class="paper-status-rows">
@@ -528,7 +513,7 @@
 			</div>
 			<ThreadTerminalDock
 				threadId={thread.id}
-				hint={thread.threadType === 'literature-review' ? 'type /literature-review to start the workflow' : ''}
+				hint="type /reos-literature-review for a lit review"
 			/>
 		</div>
 
@@ -981,159 +966,6 @@
 		text-align: center;
 		padding: var(--sp-12) 0;
 		font-size: 0.9rem;
-	}
-
-	/* Synthesis */
-	.synthesis-view {
-		padding: var(--sp-2) 0 var(--sp-8);
-		animation: fadeIn var(--duration-slow) var(--ease-out) both;
-	}
-
-	.synthesis-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--sp-4);
-	}
-
-	.synthesis-label {
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--accent);
-	}
-
-	.edit-btn {
-		font-size: 0.78rem;
-		color: var(--text-tertiary);
-		transition: color var(--duration-fast);
-	}
-
-	.edit-btn:hover { color: var(--accent); }
-
-	.synthesis-markdown {
-		font-size: 0.95rem;
-		line-height: 1.65;
-		color: var(--text-primary);
-	}
-
-	.synthesis-markdown :global(h1),
-	.synthesis-markdown :global(h2),
-	.synthesis-markdown :global(h3),
-	.synthesis-markdown :global(h4) {
-		font-family: var(--font-display);
-		font-weight: 500;
-		letter-spacing: -0.02em;
-		margin-top: var(--sp-6);
-		margin-bottom: var(--sp-3);
-		color: var(--text-primary);
-	}
-
-	.synthesis-markdown :global(h1) { font-size: 1.6rem; }
-	.synthesis-markdown :global(h2) { font-size: 1.3rem; }
-	.synthesis-markdown :global(h3) { font-size: 1.08rem; }
-	.synthesis-markdown :global(h4) { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
-
-	.synthesis-markdown :global(p) {
-		margin-bottom: var(--sp-4);
-		color: var(--text-secondary);
-	}
-
-	.synthesis-markdown :global(ul),
-	.synthesis-markdown :global(ol) {
-		margin: 0 0 var(--sp-4) var(--sp-5);
-		color: var(--text-secondary);
-	}
-
-	.synthesis-markdown :global(li) {
-		margin-bottom: var(--sp-2);
-		line-height: 1.6;
-	}
-
-	.synthesis-markdown :global(a) {
-		color: var(--accent);
-		text-decoration: underline;
-		text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
-		text-underline-offset: 2px;
-	}
-
-	.synthesis-markdown :global(a:hover) {
-		text-decoration-color: var(--accent);
-	}
-
-	.synthesis-markdown :global(code) {
-		font-family: var(--font-mono);
-		font-size: 0.85em;
-		background: var(--bg-raised);
-		padding: 1px 6px;
-		border-radius: 3px;
-		border: 1px solid var(--border);
-	}
-
-	.synthesis-markdown :global(pre) {
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: var(--sp-3) var(--sp-4);
-		overflow-x: auto;
-		margin-bottom: var(--sp-4);
-	}
-
-	.synthesis-markdown :global(pre code) {
-		background: none;
-		border: none;
-		padding: 0;
-	}
-
-	.synthesis-markdown :global(blockquote) {
-		border-left: 3px solid var(--accent);
-		padding-left: var(--sp-4);
-		margin: 0 0 var(--sp-4) 0;
-		color: var(--text-secondary);
-		font-style: italic;
-	}
-
-	.synthesis-markdown :global(hr) {
-		border: none;
-		border-top: 1px solid var(--border);
-		margin: var(--sp-6) 0;
-	}
-
-	.synthesis-markdown :global(table) {
-		border-collapse: collapse;
-		margin-bottom: var(--sp-4);
-		font-size: 0.88rem;
-	}
-
-	.synthesis-markdown :global(th),
-	.synthesis-markdown :global(td) {
-		border: 1px solid var(--border);
-		padding: var(--sp-2) var(--sp-3);
-		text-align: left;
-	}
-
-	.synthesis-markdown :global(th) {
-		background: var(--bg-raised);
-		font-weight: 500;
-	}
-
-	.synthesis-empty { font-size: 0.88rem; }
-
-	.synthesis-textarea {
-		width: 100%;
-		padding: var(--sp-3);
-		border-radius: var(--radius-sm);
-		font-size: 0.92rem;
-		line-height: 1.6;
-		resize: vertical;
-		min-height: 80px;
-	}
-
-	.synthesis-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: var(--sp-2);
-		margin-top: var(--sp-3);
 	}
 
 	/* Paper Status Rows */

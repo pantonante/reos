@@ -110,7 +110,6 @@
 			{ label: 'Go to Library', sublabel: 'Browse all papers', action: () => goto('/library') },
 			{ label: 'Go to Graph', sublabel: 'Explore citation graph', action: () => goto('/graph') },
 			{ label: 'Add Paper', sublabel: 'Import from Arxiv', action: () => { ui.commandPaletteOpen = false; ui.addPaperOpen = true; } },
-			{ label: 'New Literature Review', sublabel: 'Start a Claude Code terminal that runs /literature-review', action: () => { ui.commandPaletteOpen = false; ui.newLitReviewOpen = true; } },
 			{ label: 'Generate All Summaries', sublabel: 'Process papers without summaries', action: () => { ui.commandPaletteOpen = false; ui.batchSummaryOpen = true; } },
 		];
 

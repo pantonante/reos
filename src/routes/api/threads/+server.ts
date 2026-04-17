@@ -11,12 +11,10 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
 	const thread = await request.json();
 	const stored = wt.addThread(thread);
-	if (stored.threadType === 'literature-review') {
-		try {
-			ensureWorkspace(stored.id, { installLitReviewSkill: true });
-		} catch (err) {
-			console.error('[threads] ensureWorkspace failed:', err);
-		}
+	try {
+		ensureWorkspace(stored.id);
+	} catch (err) {
+		console.error('[threads] ensureWorkspace failed:', err);
 	}
 	return json(stored, { status: 201 });
 };
