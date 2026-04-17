@@ -1,5 +1,6 @@
 export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
 export type ThreadStatus = 'active' | 'paused' | 'concluded';
+export type ThreadType = 'literature-review';
 export type AnnotationType = 'highlight' | 'note' | 'question' | 'cross-reference';
 export type ConnectionType = 'builds-on' | 'same-method' | 'same-topic' | 'contradicts' | 'complementary';
 
@@ -54,6 +55,24 @@ export interface Thread {
 	links: ThreadLink[];
 	createdAt: string;
 	updatedAt: string;
+	/** Marks threads with special behavior (e.g. literature-review threads
+	 * that host an embedded Claude Code terminal and auto-ingest their
+	 * report). Undefined for normal research threads. */
+	threadType?: ThreadType;
+}
+
+// --- Literature review references ---
+
+export interface ParsedReference {
+	arxivId: string | null;
+	label: string;
+	url: string;
+	type: 'arxiv' | 'external';
+}
+
+export interface AnnotatedReference extends ParsedReference {
+	imported: boolean;
+	paperId?: string;
 }
 
 export interface Annotation {

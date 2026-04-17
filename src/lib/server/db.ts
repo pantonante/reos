@@ -71,7 +71,8 @@ function initSchema(db: Database.Database) {
 			parentThreadId TEXT,
 			tags TEXT NOT NULL DEFAULT '[]',
 			createdAt TEXT NOT NULL,
-			updatedAt TEXT NOT NULL
+			updatedAt TEXT NOT NULL,
+			threadType TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS thread_papers (
@@ -191,6 +192,13 @@ function initSchema(db: Database.Database) {
 	if (!msgColNames.includes('parts')) {
 		db.exec('ALTER TABLE chat_messages ADD COLUMN parts TEXT');
 	}
+
+	// Thread migrations
+	const threadCols = db.prepare("PRAGMA table_info(threads)").all() as { name: string }[];
+	const threadColNames = threadCols.map(c => c.name);
+	if (!threadColNames.includes('threadType')) {
+		db.exec('ALTER TABLE threads ADD COLUMN threadType TEXT');
+	}
 }
 
 function getMeta(d: Database.Database, key: string): string | null {
@@ -307,6 +315,7 @@ export const db = {
 				papers: papers.map((p, i) => ({ ...p, order: i })),
 				links,
 				parentThreadId: r.parentThreadId ?? null,
+				threadType: r.threadType ?? undefined,
 			};
 		});
 	},
@@ -325,6 +334,7 @@ export const db = {
 			papers: papers.map((p, i) => ({ ...p, order: i })),
 			links,
 			parentThreadId: r.parentThreadId ?? null,
+			threadType: r.threadType ?? undefined,
 		};
 	},
 
@@ -332,12 +342,12 @@ export const db = {
 		const d = getDb();
 		const insert = d.transaction(() => {
 			d.prepare(`
-				INSERT INTO threads (id, title, question, status, synthesis, parentThreadId, tags, createdAt, updatedAt)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO threads (id, title, question, status, synthesis, parentThreadId, tags, createdAt, updatedAt, threadType)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`).run(
 				thread.id, thread.title, thread.question, thread.status,
 				thread.synthesis, thread.parentThreadId, JSON.stringify(thread.tags),
-				thread.createdAt, thread.updatedAt
+				thread.createdAt, thread.updatedAt, thread.threadType ?? null
 			);
 			for (const tp of thread.papers) {
 				d.prepare('INSERT INTO thread_papers (threadId, paperId, contextNote, "order") VALUES (?, ?, ?, ?)').run(thread.id, tp.paperId, tp.contextNote, tp.order);
@@ -587,8 +597,8 @@ export const db = {
 			d.exec('DELETE FROM threads');
 
 			const insertThread = d.prepare(`
-				INSERT INTO threads (id, title, question, status, synthesis, parentThreadId, tags, createdAt, updatedAt)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO threads (id, title, question, status, synthesis, parentThreadId, tags, createdAt, updatedAt, threadType)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`);
 			const insertThreadLink = d.prepare(`
 				INSERT INTO thread_links (id, threadId, label, url) VALUES (?, ?, ?, ?)
@@ -639,6 +649,7 @@ export const db = {
 					JSON.stringify(thread.tags),
 					thread.createdAt,
 					thread.updatedAt,
+					thread.threadType ?? null,
 				);
 				for (const link of thread.links) {
 					insertThreadLink.run(link.id, slug, link.label, link.url);

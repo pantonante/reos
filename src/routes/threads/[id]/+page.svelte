@@ -2,10 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
+	import { marked } from 'marked';
 	import { threads, papers, annotations, notes, chats, ui } from '$lib/stores.svelte';
 	import AddPaperToThreadModal from '$lib/components/AddPaperToThreadModal.svelte';
 	import ConfirmDeleteModal from '$lib/components/ConfirmDeleteModal.svelte';
-	import type { ThreadStatus, ReadingStatus } from '$lib/types';
+	import ThreadTerminalDock from '$lib/components/ThreadTerminalDock.svelte';
+	import InteractiveSynthesis from '$lib/components/InteractiveSynthesis.svelte';
+	import type { ThreadStatus, ReadingStatus, AnnotatedReference } from '$lib/types';
 
 	// Register this thread as an open tab
 	$effect(() => {
@@ -13,7 +16,29 @@
 		if (id) untrack(() => ui.openThread(id));
 	});
 
-	let viewMode = $state<'timeline' | 'status' | 'matrix' | 'graph'>('timeline');
+	// Live updates: the server emits thread events when the literature-review
+	// watcher ingests a new report. We re-pull threads/papers so the UI shows
+	// the new synthesis + auto-added papers without a page reload.
+	$effect(() => {
+		const id = page.params.id;
+		if (!id || typeof window === 'undefined') return;
+		const source = new EventSource(`/api/threads/${id}/events`);
+		source.onmessage = async (ev) => {
+			try {
+				const data = JSON.parse(ev.data);
+				if (data?.type === 'thread:updated' || data?.type === 'synthesis:references-updated') {
+					await threads.reload();
+				}
+				if (data?.type === 'thread:papers-changed') {
+					await Promise.all([threads.reload(), papers.reload()]);
+				}
+			} catch { /* ignore malformed */ }
+		};
+		return () => source.close();
+	});
+
+	let viewMode = $state<'timeline' | 'status' | 'matrix' | 'graph' | 'synthesis'>('timeline');
+	let didInitialView = false;
 	let showAddPaper = $state(false);
 	let editingTitle = $state(false);
 	let titleInput = $state('');
@@ -109,6 +134,18 @@
 	}
 
 	const thread = $derived(threads.get(page.params.id));
+
+	$effect(() => {
+		if (!didInitialView && thread) {
+			didInitialView = true;
+			// Default to synthesis view if the thread already has a synthesis
+			if (thread.synthesis?.trim()) viewMode = 'synthesis';
+		}
+	});
+
+	function renderMarkdown(md: string): string {
+		return marked.parse(md, { async: false }) as string;
+	}
 
 	const threadPapers = $derived(
 		[...(thread?.papers ?? [])]
@@ -276,7 +313,8 @@
 {:else}
 	<div class="thread-layout" class:resizing={isResizing} style="--sidebar-w: {sidebarWidth}px">
 		<!-- Main content -->
-		<div class="thread-main">
+		<div class="thread-main has-terminal">
+			<div class="thread-main-scroll">
 			<header class="thread-header">
 				<div class="header-top-row">
 					<a href="/threads" class="back-link text-tertiary">← Threads</a>
@@ -317,7 +355,7 @@
 
 			<div class="view-bar">
 				<div class="view-tabs">
-					{#each ['timeline', 'status', 'matrix', 'graph'] as mode}
+					{#each ['timeline', 'status', 'matrix', 'graph', 'synthesis'] as mode}
 						<button
 							class="view-tab"
 							class:active={viewMode === mode}
@@ -377,33 +415,16 @@
 					{/if}
 				</div>
 
-				<!-- Synthesis section -->
-				<div class="synthesis-section" style="animation-delay: {timelineData.length * 50 + 120}ms">
-					<div class="synthesis-header">
-						<h3 class="synthesis-label mono">Synthesis</h3>
-						{#if !editingSynthesis}
-							<button class="edit-btn" onclick={startEditSynthesis}>
-								{thread.synthesis ? 'Edit' : 'Write'}
-							</button>
-						{/if}
-					</div>
-					{#if editingSynthesis}
-						<textarea
-							class="synthesis-textarea"
-							bind:value={synthesisInput}
-							rows="5"
-							placeholder="Your running summary or conclusion…"
-						></textarea>
-						<div class="synthesis-actions">
-							<button class="btn-ghost" onclick={() => editingSynthesis = false}>Cancel</button>
-							<button class="btn-small" onclick={saveSynthesis}>Save</button>
-						</div>
-					{:else if thread.synthesis}
-						<p class="synthesis-text">{thread.synthesis}</p>
-					{:else}
-						<p class="synthesis-empty text-tertiary">No synthesis yet.</p>
-					{/if}
-				</div>
+			{:else if viewMode === 'synthesis'}
+				<InteractiveSynthesis
+					{thread}
+					{editingSynthesis}
+					bind:synthesisInput
+					onStartEdit={startEditSynthesis}
+					onSave={saveSynthesis}
+					onCancelEdit={() => editingSynthesis = false}
+					onupload={(ref) => { showAddPaper = true; }}
+				/>
 
 			{:else if viewMode === 'status'}
 			<div class="paper-status-rows">
@@ -489,6 +510,11 @@
 					</div>
 				</div>
 			{/if}
+			</div>
+			<ThreadTerminalDock
+				threadId={thread.id}
+				hint="type /reos-literature-review for a lit review"
+			/>
 		</div>
 
 		<!-- Mobile sidebar toggle -->
@@ -674,7 +700,7 @@
 		grid-template-columns: 1fr 0px var(--sidebar-w, 280px);
 		gap: 0;
 		margin: calc(-1 * var(--sp-8));
-		height: 100vh;
+		height: calc(100% + var(--sp-8) * 2);
 		position: relative;
 	}
 
@@ -729,6 +755,29 @@
 		padding: var(--sp-8);
 		padding-right: var(--sp-10);
 	}
+
+	/* Literature-review threads: a compact scrollable strip on top for the
+	   thread header / synthesis / papers, then the terminal fills all
+	   remaining vertical and horizontal space. */
+	.thread-main.has-terminal {
+		overflow: hidden;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	.thread-main.has-terminal .thread-main-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+		padding: var(--sp-6) var(--sp-8);
+	}
+
+	.thread-main:not(.has-terminal) .thread-main-scroll {
+		display: contents;
+	}
+
 
 	.not-found {
 		text-align: center;
@@ -917,63 +966,6 @@
 		text-align: center;
 		padding: var(--sp-12) 0;
 		font-size: 0.9rem;
-	}
-
-	/* Synthesis */
-	.synthesis-section {
-		margin-top: var(--sp-6);
-		padding: var(--sp-5);
-		background: var(--bg-raised);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		animation: slideUp var(--duration-slow) var(--ease-out) both;
-	}
-
-	.synthesis-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--sp-3);
-	}
-
-	.synthesis-label {
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--accent);
-	}
-
-	.edit-btn {
-		font-size: 0.78rem;
-		color: var(--text-tertiary);
-		transition: color var(--duration-fast);
-	}
-
-	.edit-btn:hover { color: var(--accent); }
-
-	.synthesis-text {
-		font-size: 0.92rem;
-		line-height: 1.6;
-		color: var(--text-secondary);
-	}
-
-	.synthesis-empty { font-size: 0.88rem; }
-
-	.synthesis-textarea {
-		width: 100%;
-		padding: var(--sp-3);
-		border-radius: var(--radius-sm);
-		font-size: 0.92rem;
-		line-height: 1.6;
-		resize: vertical;
-		min-height: 80px;
-	}
-
-	.synthesis-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: var(--sp-2);
-		margin-top: var(--sp-3);
 	}
 
 	/* Paper Status Rows */
@@ -1244,7 +1236,7 @@
 		background: var(--bg-raised);
 		padding: var(--sp-6) var(--sp-5);
 		overflow-y: auto;
-		height: 100vh;
+		height: 100%;
 	}
 
 	.sb-header {

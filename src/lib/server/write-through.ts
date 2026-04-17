@@ -242,6 +242,7 @@ function toStoredThread(thread: Thread, existingSlug?: string): StoredThread {
 		createdAt: thread.createdAt,
 		updatedAt: thread.updatedAt,
 		links: thread.links,
+		threadType: thread.threadType,
 	};
 }
 
@@ -546,4 +547,28 @@ export function resolvePdfWritePath(paper: Paper): string {
 		: (findThreadForPaper(paper.id) ?? INBOX_SLUG);
 	materializePaperFolder(paper, slug);
 	return paperPdfPath(slug, canonicalArxivId(paper));
+}
+
+/**
+ * Append links to a thread, deduped by URL. Used by the literature-review
+ * ingest pipeline to record non-arXiv references as manually-downloadable
+ * sources without clobbering links the user has added by hand.
+ */
+export function appendThreadLinks(
+	threadId: string,
+	links: { label: string; url: string }[],
+): void {
+	const existing = db.getThread(threadId);
+	if (!existing) return;
+	const haveUrls = new Set(existing.links.map((l) => l.url.trim().toLowerCase()));
+	const additions = links
+		.filter((l) => l.url && !haveUrls.has(l.url.trim().toLowerCase()))
+		.map((l) => ({
+			id: `lnk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			label: l.label || l.url,
+			url: l.url,
+		}));
+	if (additions.length === 0) return;
+	const merged = [...existing.links, ...additions];
+	updateThread(threadId, { links: merged });
 }

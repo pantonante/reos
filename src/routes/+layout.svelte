@@ -90,6 +90,7 @@
 	<BatchSummaryModal />
 {/if}
 
+
 <style>
 	.app-shell {
 		display: grid;
