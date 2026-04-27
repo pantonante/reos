@@ -786,6 +786,20 @@ export const db = {
 		}
 	},
 
+	/**
+	 * Cheap pre-check used by the request handler to decide whether the first
+	 * request should be deflected to a "rebuilding" splash page. Mirrors the
+	 * branching in `bootstrapCache()` but performs no writes and returns
+	 * before any expensive work.
+	 */
+	cacheNeedsRebuild(): boolean {
+		const d = getDb();
+		const stored = getMeta(d, 'schemaVersion');
+		if (stored == null) return false;
+		if (stored === String(SCHEMA_VERSION)) return false;
+		return filesystemHasRealData();
+	},
+
 	getCacheMeta(): { schemaVersion: string | null; builtAt: string | null } {
 		const d = getDb();
 		return {
